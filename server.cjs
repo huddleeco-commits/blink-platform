@@ -13,6 +13,19 @@ const cors = require('cors');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { body, validationResult } = require('express-validator');
+
+// Validation error handler middleware
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, errors: errors.array() });
+  }
+  next();
+};
+
+// Industry Layout System
+const { INDUSTRY_LAYOUTS, buildLayoutContext, getLayoutConfig } = require('./config/industry-layouts.cjs');
 
 // Database and Admin Routes
 let db = null;
@@ -202,12 +215,29 @@ function buildPrompt(industryKey, layoutKey, selectedEffects) {
 }
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
-// Paths
-const MODULE_LIBRARY = 'C:\\Users\\huddl\\OneDrive\\Desktop\\module-library';
-const GENERATED_PROJECTS = 'C:\\Users\\huddl\\OneDrive\\Desktop\\generated-projects';
+// Paths - Environment-based with sensible defaults
+// MODULE_LIBRARY: parent of module-assembler-ui (this file is in module-assembler-ui/)
+// GENERATED_PROJECTS: sibling to module-library
+const MODULE_LIBRARY = process.env.MODULE_LIBRARY_PATH || path.resolve(__dirname, '..');
+const GENERATED_PROJECTS = process.env.OUTPUT_PATH || path.resolve(__dirname, '..', '..', 'generated-projects');
 const ASSEMBLE_SCRIPT = path.join(MODULE_LIBRARY, 'scripts', 'assemble-project.cjs');
+
+// Validate critical paths on startup
+if (!fs.existsSync(MODULE_LIBRARY)) {
+  console.error(`❌ MODULE_LIBRARY_PATH not found: ${MODULE_LIBRARY}`);
+  process.exit(1);
+}
+if (!fs.existsSync(ASSEMBLE_SCRIPT)) {
+  console.error(`❌ Assembler script not found: ${ASSEMBLE_SCRIPT}`);
+  process.exit(1);
+}
+// Create output directory if needed
+if (!fs.existsSync(GENERATED_PROJECTS)) {
+  fs.mkdirSync(GENERATED_PROJECTS, { recursive: true });
+  console.log(`📁 Created output directory: ${GENERATED_PROJECTS}`);
+}
 
 // Middleware
 app.use(cors());
@@ -386,6 +416,51 @@ const INDUSTRY_PRESETS = {
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// ============================================
+// PASSWORD VALIDATION ENDPOINTS
+// ============================================
+// Validate main access password
+app.post('/api/auth/validate',
+  body('password').isString().notEmpty().withMessage('Password is required'),
+  handleValidationErrors,
+  (req, res) => {
+    const { password } = req.body;
+    const adminPassword = process.env.BLINK_ADMIN_PASSWORD;
+
+    if (!adminPassword) {
+      console.error('❌ BLINK_ADMIN_PASSWORD not configured');
+      return res.status(500).json({ success: false, error: 'Server configuration error' });
+    }
+
+    if (password === adminPassword) {
+      res.json({ success: true });
+    } else {
+      res.status(401).json({ success: false, error: 'Invalid password' });
+    }
+  }
+);
+
+// Validate developer access password
+app.post('/api/auth/validate-dev',
+  body('password').isString().notEmpty().withMessage('Password is required'),
+  handleValidationErrors,
+  (req, res) => {
+    const { password } = req.body;
+    const devPassword = process.env.BLINK_DEV_PASSWORD;
+
+    if (!devPassword) {
+      console.error('❌ BLINK_DEV_PASSWORD not configured');
+      return res.status(500).json({ success: false, error: 'Server configuration error' });
+    }
+
+    if (password === devPassword) {
+      res.json({ success: true });
+    } else {
+      res.status(401).json({ success: false, error: 'Invalid password' });
+    }
+  }
+);
 
 // Get bundles
 app.get('/api/bundles', (req, res) => {
@@ -781,14 +856,21 @@ function copyDirectorySync(src, dest) {
 app.post('/api/assemble', async (req, res) => {
   const { name, industry, references, theme, description, autoDeploy } = req.body;
 
-  // Sanitize project name - convert & to "and" for folder/URL compatibility
-const sanitizedName = name
-  .replace(/&/g, ' and ')
-  .replace(/\s+/g, ' ')
-  .trim();
-  
   if (!name) {
     return res.status(400).json({ success: false, error: 'Project name required' });
+  }
+
+  // Sanitize project name - SECURITY: Remove ALL shell-dangerous characters
+  // Only allow alphanumeric, spaces, and dashes
+  const sanitizedName = name
+    .replace(/&/g, ' and ')           // Convert & to "and"
+    .replace(/[^a-zA-Z0-9\s-]/g, '')  // Remove ALL special chars (prevents shell injection)
+    .replace(/\s+/g, ' ')             // Collapse multiple spaces
+    .trim()
+    .substring(0, 100);               // Limit length
+
+  if (!sanitizedName || sanitizedName.length < 2) {
+    return res.status(400).json({ success: false, error: 'Project name must be at least 2 characters (alphanumeric only)' });
   }
   
   // Build command arguments
@@ -1045,29 +1127,59 @@ const sanitizedName = name
   }
   
   const startTime = Date.now();
-console.log(`\n🚀 Assembling project: ${sanitizedName}`);
+  const ASSEMBLY_TIMEOUT = 5 * 60 * 1000; // 5 minute timeout
+  let responded = false;
+
+  console.log(`\n🚀 Assembling project: ${sanitizedName}`);
   console.log(`   Command: node ${ASSEMBLE_SCRIPT} ${args.join(' ')}`);
-  
-  // Execute the assembly script
-  const childProcess = spawn('node', [ASSEMBLE_SCRIPT, ...args], {
+
+  // Execute the assembly script - SECURITY: shell: false prevents injection
+  const childProcess = spawn(process.execPath, [ASSEMBLE_SCRIPT, ...args], {
     cwd: path.dirname(ASSEMBLE_SCRIPT),
-    shell: true
+    shell: false,  // CRITICAL: Never use shell: true with user input
+    env: { ...process.env, MODULE_LIBRARY_PATH: MODULE_LIBRARY, OUTPUT_PATH: GENERATED_PROJECTS }
   });
-  
+
+  // Timeout handler - kill process if it takes too long
+  const timeoutId = setTimeout(() => {
+    if (!responded) {
+      responded = true;
+      childProcess.kill('SIGTERM');
+      console.error(`❌ Assembly timeout after ${ASSEMBLY_TIMEOUT / 1000}s`);
+      res.status(504).json({
+        success: false,
+        error: 'Assembly timeout - process took too long',
+        duration: Date.now() - startTime
+      });
+    }
+  }, ASSEMBLY_TIMEOUT);
+
   let output = '';
   let errorOutput = '';
-  
+
   childProcess.stdout.on('data', (data) => {
     output += data.toString();
     console.log(data.toString());
   });
-  
+
   childProcess.stderr.on('data', (data) => {
     errorOutput += data.toString();
     console.error(data.toString());
   });
-  
+
+  // Handle spawn errors (e.g., ENOENT if node not found)
+  childProcess.on('error', (err) => {
+    clearTimeout(timeoutId);
+    if (!responded) {
+      responded = true;
+      console.error(`❌ Spawn error: ${err.message}`);
+      res.status(500).json({ success: false, error: `Failed to start assembly: ${err.message}` });
+    }
+  });
+
   childProcess.on('close', async (code) => {
+    clearTimeout(timeoutId);
+    if (responded) return; // Already responded (timeout or error)
     if (code === 0) {
       const projectPath = path.join(GENERATED_PROJECTS, sanitizedName);
       const manifestPath = path.join(projectPath, 'project-manifest.json');
@@ -1431,7 +1543,8 @@ console.log(`   ⏱️ Total generation time: ${((Date.now() - startTime) / 1000
       if (autoDeploy && deployReady) {
         deployResult = await autoDeployProject(projectPath, name, 'admin@be1st.io');
       }
-      
+
+      responded = true;
       res.json({
         success: true,
         message: 'Project assembled successfully',
@@ -1453,14 +1566,17 @@ console.log(`   ⏱️ Total generation time: ${((Date.now() - startTime) / 1000
           }
         },
         output: output,
-        deployment: deployResult
+        deployment: deployResult,
+        duration: Date.now() - startTime
       });
     } else {
+      responded = true;
       res.status(500).json({
         success: false,
         error: 'Assembly failed',
         output: output,
-        errorOutput: errorOutput
+        errorOutput: errorOutput,
+        duration: Date.now() - startTime
       });
     }
   });
@@ -1782,12 +1898,17 @@ Replace any standard elements with the user's specified alternatives.
 ══════════════════════════════════════════════════════════════
 ` : '';
 
+  // EXTRACT INDUSTRY LAYOUT CONFIG
+  const industryLayoutKey = description.industryKey || null;
+  const selectedLayoutKey = description.layoutKey || null;
+  const layoutContext = industryLayoutKey ? buildLayoutContext(industryLayoutKey, selectedLayoutKey) : '';
+
   return `You are a high-end UI/UX Architect. Create a stunning, unique ${pageId} page.
 
 BUSINESS: ${description.text || 'A professional business'}
 INDUSTRY: ${industry.name || 'Business'}
 VIBE: ${industry.vibe || 'Unique and modern'}
-${rebuildContext}${inspiredContext}${assetsContext}${extraDetailsContext}
+${rebuildContext}${inspiredContext}${assetsContext}${extraDetailsContext}${layoutContext}
 ══════════════════════════════════════════════════════════════
 CORE VISUAL ARCHETYPE: ${selectedArchetype}
 ══════════════════════════════════════════════════════════════
@@ -1847,6 +1968,33 @@ EXAMPLE:
 TECHNICAL RULES (MUST FOLLOW):
 1. Use inline styles ONLY: style={{ }} - NO className or Tailwind.
 2. Use Lucide icons: import { IconName } from 'lucide-react'.
+   VALID ICONS (use ONLY these): ArrowRight, ArrowLeft, ArrowUp, ArrowDown, Check, X, Menu,
+   ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Minus, Search, Filter,
+   Star, Heart, Mail, Phone, MapPin, Clock, Calendar, User, Users, Settings,
+   Home, Building, Briefcase, Shield, Award, Target, Zap, Sparkles, Crown,
+   DollarSign, CreditCard, ShoppingCart, Package, Truck, Gift, Tag, Percent,
+   Eye, EyeOff, Lock, Unlock, Key, Bell, MessageSquare, Send, Share, Download, Upload,
+   Image, Camera, Play, Pause, Volume, VolumeX, Mic, Video, Music, File, FileText, Folder,
+   Link, ExternalLink, Globe, Wifi, Database, Server, Code, Terminal, Cpu,
+   Sun, Moon, Cloud, Thermometer, Droplet, Wind, Umbrella,
+   Car, Plane, Ship, Train, Bike, MapPinned, Navigation, Compass,
+   Utensils, Coffee, Wine, Pizza, Cake, Apple,
+   Stethoscope, Activity, Pill, Syringe, Bone, Brain,
+   GraduationCap, BookOpen, Pencil, Ruler, Calculator,
+   Wrench, Hammer, Scissors, Paintbrush, Palette,
+   Dog, Cat, Bird, Fish, Bug, Leaf, Flower, Tree,
+   Facebook, Twitter, Instagram, Linkedin, Youtube, Github,
+   AlertCircle, AlertTriangle, Info, HelpCircle, CheckCircle, XCircle,
+   RefreshCw, RotateCw, Loader, MoreHorizontal, MoreVertical, Grip,
+   Copy, Clipboard, Save, Trash, Edit, Edit2, Maximize, Minimize,
+   LogIn, LogOut, UserPlus, UserMinus, UserCheck, Smile, Frown, Meh,
+   ThumbsUp, ThumbsDown, Flag, Bookmark, Archive, Inbox, Layers,
+   Layout, Grid, List, Table, BarChart, BarChart2, BarChart3, PieChart, LineChart, TrendingUp, TrendingDown,
+   Quote, Hash, AtSign, Percent, Receipt, Wallet, Banknote, Coins,
+   Headphones, Speaker, Radio, Tv, Monitor, Smartphone, Tablet, Watch, Printer,
+   Power, Battery, BatteryCharging, Plug, Lightbulb, Flashlight, Flame,
+   Anchor, Rocket, Award, Medal, Trophy, Crown, Gem, Diamond
+   DO NOT use icons not in this list. If you need "Handshake", use "Users" or "Link" instead.
 3. NAVIGATION: Use <Link to="/path"> from react-router-dom.
 4. NO nav/footer - those are provided by App.jsx.
 5. WHITESPACE: Use THEME.spacing.sectionPadding for top/bottom margins.
@@ -2540,27 +2688,80 @@ const VALID_LUCIDE_ICONS = [
   'CodeXml', 'Coins', 'Columns', 'Combine', 'Command', 'Component', 'Computer', 'ConciergeBell', 'Cone',
   'Construction', 'Contact', 'Container', 'Contrast', 'Cookie', 'CopyCheck', 'Copyright', 'CornerLeftDown',
   'CornerLeftUp', 'CornerRightDown', 'CornerRightUp', 'CornerUpLeft', 'CornerUpRight', 'Cpu', 'CreativeCommons',
-  'Crown', 'Cuboid', 'CupSoda', 'Currency', 'Cylinder'
+  'Crown', 'Cuboid', 'CupSoda', 'Currency', 'Cylinder',
+  // Additional valid icons in lucide-react ^0.454.0
+  'Hammer', 'Wrench', 'Paintbrush', 'Palette', 'Ruler', 'Pipette', 'Eraser',
+  'PenTool', 'Highlighter', 'Stamp', 'Sticker', 'Wand', 'Wand2',
+  'Plane', 'PlaneTakeoff', 'PlaneLanding', 'Ship', 'Sailboat', 'Train', 'Tram', 'Bus',
+  'Ambulance', 'FireExtinguisher', 'Siren', 'Construction',
+  'Pill', 'Stethoscope', 'Syringe', 'HeartPulse', 'Microscope', 'TestTube', 'Dna',
+  'GraduationCap', 'Library', 'BookText', 'NotebookPen', 'FileQuestion',
+  'Presentation', 'Projector', 'ScreenShare', 'MonitorPlay',
+  'Gamepad', 'Joystick', 'Dice1', 'Dice2', 'Dice3', 'Dice4', 'Dice5', 'Dice6',
+  'Piano', 'Guitar', 'Drum', 'Mic2', 'MicVocal', 'Headset',
+  'Shirt', 'Watch', 'Glasses', 'Gem', 'Diamond', 'Crown', 'Ring',
+  'Martini', 'GlassWater', 'CoffeeIcon', 'Soup', 'Drumstick',
+  'Sunrise', 'Sunset', 'CloudRain', 'CloudSnow', 'CloudLightning', 'Snowflake',
+  'Palmtree', 'Mountain', 'MountainSnow', 'Waves', 'Rainbow',
+  'Fingerprint', 'Scan', 'ScanFace', 'QrCode', 'Barcode',
+  'PlugZap', 'Cable', 'Usb', 'HardDrive', 'MemoryStick',
+  'ShieldAlert', 'ShieldBan', 'ShieldOff', 'KeyRound', 'KeySquare',
+  'Waypoints', 'Route', 'Signpost', 'SignpostBig', 'Milestone'
 ];
 
 // Icon replacement map for invalid icons
+// Note: Icons like Handshake, Trophy, Medal ARE valid in lucide-react ^0.454.0
+// Only map truly non-existent or problematic icons
 const ICON_REPLACEMENTS = {
   'Rifle': 'Target',
-  'Gun': 'Crosshair', 
+  'Gun': 'Crosshair',
   'Pistol': 'Circle',
-  'Trophy': 'Award',
-  'Handshake': 'Users',
-  'Medal': 'Award',
-  'Bullet': 'Dot',
+  'Bullet': 'Circle',
   'Weapon': 'Shield',
-  'Knife': 'Utensils',
   'Sword': 'Shield',
-  'Axe': 'Tool',
-  'Hammer': 'Tool',
-  'Drill': 'Tool',
-  'Saw': 'Tool',
-  'Wrench': 'Tool',
-  'Screwdriver': 'Tool'
+  'Axe': 'Wrench',
+  'Drill': 'Wrench',
+  'Saw': 'Wrench',
+  'Screwdriver': 'Wrench',
+  // Common AI hallucinations - map to valid alternatives
+  'Partnership': 'Users',
+  'Team': 'Users',
+  'Group': 'Users',
+  'People': 'Users',
+  'Agreement': 'FileText',
+  'Contract': 'FileText',
+  'Document': 'FileText',
+  'Paper': 'FileText',
+  'Money': 'DollarSign',
+  'Cash': 'Banknote',
+  'Price': 'Tag',
+  'Cost': 'Receipt',
+  'Location': 'MapPin',
+  'Address': 'MapPin',
+  'Place': 'MapPin',
+  'Time': 'Clock',
+  'Duration': 'Clock',
+  'Schedule': 'Calendar',
+  'Date': 'Calendar',
+  'Email': 'Mail',
+  'Message': 'MessageSquare',
+  'Chat': 'MessageSquare',
+  'Call': 'Phone',
+  'Telephone': 'Phone',
+  'Website': 'Globe',
+  'Internet': 'Globe',
+  'Web': 'Globe',
+  'Social': 'Share',
+  'Network': 'Share',
+  'Success': 'CheckCircle',
+  'Complete': 'CheckCircle',
+  'Done': 'Check',
+  'Error': 'AlertCircle',
+  'Warning': 'AlertTriangle',
+  'Danger': 'AlertTriangle',
+  'Info': 'Info',
+  'Help': 'HelpCircle',
+  'Question': 'HelpCircle'
 };
 
 // ============================================
@@ -2670,24 +2871,50 @@ body { margin: 0; font-family: var(--font-body); color: var(--color-text); }
 // Open folder in explorer
 app.post('/api/open-folder', (req, res) => {
   const { path: folderPath } = req.body;
-  
+
   if (!folderPath) {
     return res.status(400).json({ success: false, error: 'Path required' });
   }
-  
-  spawn('explorer', [folderPath], { shell: true, detached: true });
+
+  // SECURITY: Validate path is within allowed directories
+  const normalizedPath = path.resolve(folderPath);
+  const isAllowedPath = normalizedPath.startsWith(GENERATED_PROJECTS) ||
+                        normalizedPath.startsWith(MODULE_LIBRARY);
+  if (!isAllowedPath) {
+    return res.status(403).json({ success: false, error: 'Access denied - path outside allowed directories' });
+  }
+
+  if (!fs.existsSync(normalizedPath)) {
+    return res.status(404).json({ success: false, error: 'Path does not exist' });
+  }
+
+  // Use shell: true for Windows explorer, but path is validated above
+  spawn('explorer', [normalizedPath], { shell: true, detached: true });
   res.json({ success: true });
 });
 
 // Open in VS Code
 app.post('/api/open-vscode', (req, res) => {
   const { path: folderPath } = req.body;
-  
+
   if (!folderPath) {
     return res.status(400).json({ success: false, error: 'Path required' });
   }
-  
-  spawn('code', [folderPath], { shell: true, detached: true });
+
+  // SECURITY: Validate path is within allowed directories
+  const normalizedPath = path.resolve(folderPath);
+  const isAllowedPath = normalizedPath.startsWith(GENERATED_PROJECTS) ||
+                        normalizedPath.startsWith(MODULE_LIBRARY);
+  if (!isAllowedPath) {
+    return res.status(403).json({ success: false, error: 'Access denied - path outside allowed directories' });
+  }
+
+  if (!fs.existsSync(normalizedPath)) {
+    return res.status(404).json({ success: false, error: 'Path does not exist' });
+  }
+
+  // Use shell: true for Windows 'code' command, but path is validated above
+  spawn('code', [normalizedPath], { shell: true, detached: true });
   res.json({ success: true });
 });
 

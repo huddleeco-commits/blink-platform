@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { INDUSTRY_LAYOUTS, getLayoutConfig, buildLayoutPromptContext } from '../config/industry-layouts.js';
 
 const API_BASE = 'http://localhost:3001';
 
@@ -29,25 +30,42 @@ function PasswordGate({ onUnlock }) {
   const [error, setError] = useState(false);
   const [shake, setShake] = useState(false);
   const [taglineIndex, setTaglineIndex] = useState(0);
-  
-  const CORRECT_PASSWORD = 'blink2026';
-  
+  const [isValidating, setIsValidating] = useState(false);
+
   useEffect(() => {
     const interval = setInterval(() => {
       setTaglineIndex(prev => (prev + 1) % TAGLINES.length);
     }, 4000);
     return () => clearInterval(interval);
   }, []);
-  
-  const handleSubmit = (e) => {
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (password === CORRECT_PASSWORD) {
-      localStorage.setItem('blink_access', 'granted');
-      onUnlock();
-    } else {
+    if (isValidating) return;
+
+    setIsValidating(true);
+    try {
+      const response = await fetch('/api/auth/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+
+      if (response.ok) {
+        localStorage.setItem('blink_access', 'granted');
+        onUnlock();
+      } else {
+        setError(true);
+        setShake(true);
+        setTimeout(() => setShake(false), 500);
+      }
+    } catch (err) {
+      console.error('Auth error:', err);
       setError(true);
       setShake(true);
       setTimeout(() => setShake(false), 500);
+    } finally {
+      setIsValidating(false);
     }
   };
 
@@ -98,15 +116,31 @@ const gateStyles = {
 function DevPasswordModal({ onSuccess, onCancel }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
-  const DEV_PASSWORD = 'abc123';
-  
-  const handleSubmit = (e) => {
+  const [isValidating, setIsValidating] = useState(false);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (password === DEV_PASSWORD) {
-      localStorage.setItem('blink_dev_access', 'granted');
-      onSuccess();
-    } else {
+    if (isValidating) return;
+
+    setIsValidating(true);
+    try {
+      const response = await fetch('/api/auth/validate-dev', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+
+      if (response.ok) {
+        localStorage.setItem('blink_dev_access', 'granted');
+        onSuccess();
+      } else {
+        setError(true);
+      }
+    } catch (err) {
+      console.error('Dev auth error:', err);
       setError(true);
+    } finally {
+      setIsValidating(false);
     }
   };
   
@@ -168,7 +202,20 @@ export default function App() {
     tagline: '',
     industry: null,
     industryKey: null,
-    
+    layoutKey: null, // Selected layout within industry
+
+    // NEW: Business basics
+    location: '',
+
+    // NEW: Target audience (multi-select)
+    targetAudience: [],
+
+    // NEW: Primary CTA goal
+    primaryCTA: 'contact', // 'book', 'call', 'quote', 'buy', 'visit', 'contact'
+
+    // NEW: Tone (0 = professional, 100 = friendly)
+    tone: 50,
+
     // Colors
     colorMode: 'preset', // 'preset', 'custom', 'from-site'
     colors: {
@@ -179,33 +226,38 @@ export default function App() {
       background: '#ffffff'
     },
     selectedPreset: null,
-    
+
     // Style
-    layoutKey: null,
     effects: [],
-    
+
     // Pages
     selectedPages: ['home', 'about', 'contact'],
-    
+
     // References (for reference path)
     referenceSites: [],
-    
+
     // Existing site (for rebuild path)
     existingSite: null,
-    
+
     // Uploaded assets (logo, photos, menu)
     uploadedAssets: {
       logo: null,
       photos: [],
       menu: null
     },
-    
+
     // Image/style description
     imageDescription: '',
-    
+
     // Extra details for AI customization
     extraDetails: ''
   });
+
+  // NEW: Generation state with real steps
+  const [generationSteps, setGenerationSteps] = useState([]);
+  const [currentGenerationStep, setCurrentGenerationStep] = useState(0);
+  const [generationStartTime, setGenerationStartTime] = useState(null);
+  const [abortController, setAbortController] = useState(null);
   
   // Server data
   const [industries, setIndustries] = useState({});
@@ -319,24 +371,52 @@ export default function App() {
     setStep('customize');
   };
 
-  // Generate the project
+  // Generate the project with real step tracking
   const handleGenerate = async () => {
     if (!projectData.businessName.trim()) {
-      setError('Please enter a business name');
+      setError({ title: 'Missing Business Name', message: 'Please enter a business name to continue.' });
       return;
     }
-    
+
+    // Initialize generation with real steps
+    const steps = [
+      { id: 'analyzing', label: 'Analyzing your business', icon: '🔍' },
+      { id: 'selecting', label: 'Selecting components', icon: '📦' },
+      ...projectData.selectedPages.map(page => ({
+        id: `page-${page}`,
+        label: `Generating ${page.charAt(0).toUpperCase() + page.slice(1)} page`,
+        icon: '📄'
+      })),
+      { id: 'wiring', label: 'Wiring up backend', icon: '⚙️' },
+      { id: 'finalizing', label: 'Finalizing project', icon: '✨' }
+    ];
+
+    setGenerationSteps(steps);
+    setCurrentGenerationStep(0);
+    setGenerationStartTime(Date.now());
     setStep('generating');
     setGenerating(true);
     setProgress(0);
-    
+    setError(null);
+
+    // Create abort controller for cancellation
+    const controller = new AbortController();
+    setAbortController(controller);
+
     try {
-      // Progress simulation
-      const progressInterval = setInterval(() => {
-        setProgress(prev => Math.min(90, prev + Math.random() * 15));
-      }, 500);
-      
-      // Build the payload for server
+      // Simulate step progress while waiting for server
+      const stepInterval = setInterval(() => {
+        setCurrentGenerationStep(prev => {
+          const next = Math.min(prev + 1, steps.length - 1);
+          setProgress((next / steps.length) * 90);
+          return next;
+        });
+      }, 2000);
+
+      // Build the payload with new fields
+      const toneLabel = projectData.tone < 33 ? 'professional and formal' :
+                        projectData.tone > 66 ? 'friendly and casual' : 'balanced';
+
       const payload = {
         name: projectData.businessName.replace(/[^a-zA-Z0-9]/g, '-'),
         industry: projectData.industryKey,
@@ -354,20 +434,33 @@ export default function App() {
           existingSite: projectData.existingSite,
           extraDetails: projectData.extraDetails,
           uploadedAssets: projectData.uploadedAssets,
-          imageDescription: projectData.imageDescription
+          imageDescription: projectData.imageDescription,
+          // NEW fields for better AI prompts
+          location: projectData.location,
+          targetAudience: projectData.targetAudience,
+          primaryCTA: projectData.primaryCTA,
+          tone: toneLabel
         }
       };
-      
+
       const response = await fetch(`${API_BASE}/api/assemble`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
-      
+
+      clearInterval(stepInterval);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error: ${response.status}`);
+      }
+
       const data = await response.json();
-      clearInterval(progressInterval);
-      
+
       if (data.success) {
+        setCurrentGenerationStep(steps.length);
         setProgress(100);
         setResult(data.project);
         setStep('complete');
@@ -375,39 +468,65 @@ export default function App() {
         throw new Error(data.error || 'Generation failed');
       }
     } catch (err) {
-      setError(err.message);
-      setStep('error');
+      if (err.name === 'AbortError') {
+        // User cancelled - go back to customize
+        setStep('customize');
+      } else {
+        setError({
+          title: 'Generation Failed',
+          message: err.message,
+          hint: 'This could be a network issue or server problem. Try again in a moment.'
+        });
+        setStep('error');
+      }
     } finally {
       setGenerating(false);
+      setAbortController(null);
     }
   };
+
+  // Cancel generation
+  const handleCancelGeneration = () => {
+    if (abortController) {
+      abortController.abort();
+    }
+  };
+
+  // Deploy state with cancel support
+  const [deployAbortController, setDeployAbortController] = useState(null);
+  const [deployStartTime, setDeployStartTime] = useState(null);
 
   // Deploy the generated project
   const handleDeploy = async () => {
     if (!result?.path || !result?.name) {
-      setDeployError('No project to deploy');
+      setDeployError({ title: 'No Project', message: 'No project to deploy. Please generate a project first.' });
       setStep('deploy-error');
       return;
     }
-    
+
     setStep('deploying');
     setDeployStatus('Starting deployment...');
     setDeployError(null);
-    
+    setDeployStartTime(Date.now());
+
+    // Create abort controller for cancellation
+    const controller = new AbortController();
+    setDeployAbortController(controller);
+
     try {
       // Status updates for user feedback
       const statusUpdates = [
-        'Creating GitHub repository...',
-        'Pushing code to GitHub...',
-        'Creating Railway project...',
-        'Provisioning PostgreSQL database...',
-        'Deploying backend service...',
-        'Deploying frontend service...',
-        'Configuring custom domains...',
-        'Setting up DNS records...',
-        'Finalizing deployment...'
+        { status: 'Creating GitHub repository...', icon: '📦' },
+        { status: 'Pushing code to GitHub...', icon: '📤' },
+        { status: 'Creating Railway project...', icon: '🚂' },
+        { status: 'Provisioning PostgreSQL database...', icon: '🗄️' },
+        { status: 'Deploying backend service...', icon: '⚙️' },
+        { status: 'Deploying frontend service...', icon: '🌐' },
+        { status: 'Configuring custom domains...', icon: '🔗' },
+        { status: 'Setting up DNS records...', icon: '📡' },
+        { status: 'Finalizing deployment...', icon: '✨' }
       ];
-      
+
       let statusIndex = 0;
       const statusInterval = setInterval(() => {
         if (statusIndex < statusUpdates.length) {
@@ -415,7 +534,7 @@ export default function App() {
           statusIndex++;
         }
       }, 3000);
-      
+
       const response = await fetch(`${API_BASE}/api/deploy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -423,13 +542,19 @@ export default function App() {
           projectPath: result.path,
           projectName: result.name || projectData.businessName.replace(/[^a-zA-Z0-9]/g, '-'),
           adminEmail: 'admin@be1st.io'
-        })
+        }),
+        signal: controller.signal
       });
-      
+
       clearInterval(statusInterval);
-      
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error: ${response.status}`);
+      }
+
       const data = await response.json();
-      
+
       if (data.success) {
         setDeployResult(data);
         setStep('deploy-complete');
@@ -437,8 +562,26 @@ export default function App() {
         throw new Error(data.error || 'Deployment failed');
       }
     } catch (err) {
-      setDeployError(err.message);
-      setStep('deploy-error');
+      if (err.name === 'AbortError') {
+        // User cancelled - go back to complete
+        setStep('complete');
+      } else {
+        setDeployError({
+          title: 'Deployment Failed',
+          message: err.message,
+          hint: 'Your project was generated successfully. You can try deploying again or deploy manually.'
+        });
+        setStep('deploy-error');
+      }
+    } finally {
+      setDeployAbortController(null);
+    }
+  };
+
+  // Cancel deployment
+  const handleCancelDeploy = () => {
+    if (deployAbortController) {
+      deployAbortController.abort();
     }
   };
 
@@ -451,6 +594,10 @@ export default function App() {
       tagline: '',
       industry: null,
       industryKey: null,
+      location: '',
+      targetAudience: [],
+      primaryCTA: 'contact',
+      tone: 50,
       colorMode: 'preset',
       colors: { primary: '#3b82f6', secondary: '#1e40af', accent: '#f59e0b', text: '#1a1a2e', background: '#ffffff' },
       selectedPreset: null,
@@ -458,11 +605,20 @@ export default function App() {
       effects: [],
       selectedPages: ['home', 'about', 'contact'],
       referenceSites: [],
-      existingSite: null
+      existingSite: null,
+      uploadedAssets: { logo: null, photos: [], menu: null },
+      imageDescription: '',
+      extraDetails: ''
     });
     setResult(null);
     setError(null);
     setProgress(0);
+    setGenerationSteps([]);
+    setCurrentGenerationStep(0);
+    setGenerationStartTime(null);
+    setDeployResult(null);
+    setDeployError(null);
+    setDeployStartTime(null);
   };
 
   // ============================================
@@ -550,10 +706,12 @@ export default function App() {
         )}
         
         {step === 'generating' && (
-          <GeneratingStep 
-            progress={progress} 
-            projectName={projectData.businessName} 
-            onBlinkUpdate={setFinalBlinkCount}
+          <GeneratingStep
+            steps={generationSteps}
+            currentStep={currentGenerationStep}
+            startTime={generationStartTime}
+            projectName={projectData.businessName}
+            onCancel={handleCancelGeneration}
           />
         )}
         
@@ -573,7 +731,12 @@ export default function App() {
         )}
         
         {step === 'deploying' && (
-          <DeployingStep status={deployStatus} projectName={projectData.businessName} />
+          <DeployingStep
+            status={deployStatus}
+            projectName={projectData.businessName}
+            startTime={deployStartTime}
+            onCancel={handleCancelDeploy}
+          />
         )}
         
         {step === 'deploy-complete' && (
@@ -659,15 +822,27 @@ function RebuildStep({ projectData, updateProject, onContinue, onBack }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState(null);
-  
+
   // What they DON'T like about current site
   const [dislikes, setDislikes] = useState([]);
+  // What they LIKE about current site (want to preserve)
+  const [likes, setLikes] = useState([]);
   const [notes, setNotes] = useState('');
-  
+
+  // Keep/Change decisions
+  const [keepLogo, setKeepLogo] = useState(true);
+  const [keepColors, setKeepColors] = useState(false);
+  const [selectedImages, setSelectedImages] = useState(new Set());
+  const [selectedHeadlines, setSelectedHeadlines] = useState(new Set());
+
   // Optional reference sites for inspiration
   const [showReferences, setShowReferences] = useState(false);
   const [references, setReferences] = useState([{ url: '', likes: [], notes: '' }]);
-  
+
+  // Expanded sections
+  const [showImages, setShowImages] = useState(true);
+  const [showHeadlines, setShowHeadlines] = useState(true);
+
   const dislikeOptions = [
     { id: 'outdated', label: 'Looks outdated', icon: '📅' },
     { id: 'slow', label: 'Too slow', icon: '🐌' },
@@ -680,47 +855,98 @@ function RebuildStep({ projectData, updateProject, onContinue, onBack }) {
     { id: 'content', label: 'Content needs work', icon: '📝' },
     { id: 'trust', label: 'Doesn\'t build trust', icon: '🤝' },
   ];
-  
+
+  const likeOptions = [
+    { id: 'brand', label: 'Brand identity', icon: '🏷️' },
+    { id: 'tone', label: 'Business tone', icon: '💬' },
+    { id: 'structure', label: 'Page structure', icon: '📐' },
+    { id: 'content', label: 'Written content', icon: '📝' },
+    { id: 'images', label: 'Current photos', icon: '🖼️' },
+    { id: 'contact', label: 'Contact info', icon: '📞' },
+  ];
+
   const toggleDislike = (id) => {
     setDislikes(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]);
   };
 
+  const toggleLike = (id) => {
+    setLikes(prev => prev.includes(id) ? prev.filter(l => l !== id) : [...prev, id]);
+  };
+
+  const toggleImage = (imgSrc) => {
+    setSelectedImages(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(imgSrc)) {
+        newSet.delete(imgSrc);
+      } else {
+        newSet.add(imgSrc);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleHeadline = (headline) => {
+    setSelectedHeadlines(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(headline)) {
+        newSet.delete(headline);
+      } else {
+        newSet.add(headline);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllImages = () => {
+    const allImages = analysis?.designSystem?.images || [];
+    setSelectedImages(new Set(allImages.map(img => img.src)));
+  };
+
+  const deselectAllImages = () => {
+    setSelectedImages(new Set());
+  };
+
   const handleAnalyze = async () => {
     if (!url.trim()) return;
-    
+
     setAnalyzing(true);
     setError(null);
-    
+
     try {
       let cleanUrl = url.trim();
       if (!cleanUrl.startsWith('http')) {
         cleanUrl = 'https://' + cleanUrl;
       }
-      
+
       const response = await fetch(`${API_BASE}/api/analyze-existing-site`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: cleanUrl })
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         setAnalysis(data.analysis);
-        
+
+        // Auto-select logo and hero images by default
+        const autoSelected = new Set();
+        const catImages = data.analysis.designSystem?.categorizedImages;
+        if (catImages?.logo) catImages.logo.forEach(img => autoSelected.add(img.src));
+        if (catImages?.hero) catImages.hero.slice(0, 2).forEach(img => autoSelected.add(img.src));
+        if (catImages?.product) catImages.product.slice(0, 4).forEach(img => autoSelected.add(img.src));
+        setSelectedImages(autoSelected);
+
+        // Auto-select first few headlines
+        const headlines = data.analysis.pageContent?.headlines || [];
+        setSelectedHeadlines(new Set(headlines.slice(0, 3)));
+
         // Auto-fill project data from analysis
         updateProject({
           businessName: data.analysis.businessName || '',
           tagline: data.analysis.description || '',
           industryKey: data.analysis.industry || 'saas',
-          existingSite: {
-            ...data.analysis,
-            dislikes: dislikes,
-            userNotes: notes,
-            referenceInspiration: references.filter(r => r.url.trim())
-          },
           selectedPages: data.analysis.recommendations?.pages || ['home', 'about', 'services', 'contact'],
-          colors: data.analysis.designSystem?.colors || projectData.colors
         });
       } else {
         setError(data.error || 'Failed to analyze site');
@@ -732,12 +958,58 @@ function RebuildStep({ projectData, updateProject, onContinue, onBack }) {
     }
   };
 
+  const handleContinue = () => {
+    // Build the complete existingSite object with all selections
+    const selectedImagesArray = analysis?.designSystem?.images?.filter(img => selectedImages.has(img.src)) || [];
+    const selectedHeadlinesArray = Array.from(selectedHeadlines);
+
+    updateProject({
+      existingSite: {
+        ...analysis,
+        dislikes,
+        likes,
+        userNotes: notes,
+        keepLogo,
+        keepColors,
+        selectedImages: selectedImagesArray,
+        selectedHeadlines: selectedHeadlinesArray,
+        referenceInspiration: references.filter(r => r.url.trim())
+      },
+      colors: keepColors && analysis?.designSystem?.colors?.length > 0
+        ? {
+            primary: analysis.designSystem.colors[0] || projectData.colors.primary,
+            secondary: analysis.designSystem.colors[1] || projectData.colors.secondary,
+            accent: analysis.designSystem.colors[2] || projectData.colors.accent,
+            text: projectData.colors.text,
+            background: projectData.colors.background
+          }
+        : projectData.colors
+    });
+    onContinue();
+  };
+
+  // Get categorized images for display
+  const getImagesByCategory = () => {
+    const cat = analysis?.designSystem?.categorizedImages;
+    if (!cat) return [];
+
+    const categories = [];
+    if (cat.logo?.length > 0) categories.push({ name: 'Logo', icon: '🏷️', images: cat.logo });
+    if (cat.hero?.length > 0) categories.push({ name: 'Hero/Banner', icon: '🦸', images: cat.hero });
+    if (cat.team?.length > 0) categories.push({ name: 'Team', icon: '👥', images: cat.team });
+    if (cat.product?.length > 0) categories.push({ name: 'Products/Services', icon: '📦', images: cat.product });
+    if (cat.gallery?.length > 0) categories.push({ name: 'Gallery', icon: '🖼️', images: cat.gallery });
+    if (cat.general?.length > 0) categories.push({ name: 'Other', icon: '📷', images: cat.general.slice(0, 6) });
+
+    return categories;
+  };
+
   return (
     <div style={styles.stepContainer}>
       <button style={styles.backBtn} onClick={onBack}>← Back</button>
-      
-      <h1 style={styles.stepTitle}>🔄 Paste Your Website URL</h1>
-      <p style={styles.stepSubtitle}>We'll analyze it and create a modern upgrade</p>
+
+      <h1 style={styles.stepTitle}>🔄 Rebuild Your Website</h1>
+      <p style={styles.stepSubtitle}>We'll analyze your site and create a modern upgrade</p>
 
       <div style={styles.inputRow}>
         <input
@@ -749,8 +1021,8 @@ function RebuildStep({ projectData, updateProject, onContinue, onBack }) {
           style={styles.bigInput}
           autoFocus
         />
-        <button 
-          onClick={handleAnalyze} 
+        <button
+          onClick={handleAnalyze}
           disabled={analyzing || !url.trim()}
           style={{...styles.primaryBtn, opacity: analyzing || !url.trim() ? 0.5 : 1}}
         >
@@ -762,77 +1034,254 @@ function RebuildStep({ projectData, updateProject, onContinue, onBack }) {
 
       {/* Analysis Results */}
       {analysis && (
-        <div style={styles.analysisCard}>
-          <div style={styles.analysisHeader}>
-            <span style={styles.checkIcon}>✅</span>
-            <span>Site Analyzed Successfully!</span>
-          </div>
-          
-          <div style={styles.analysisGrid}>
-            <div style={styles.analysisItem}>
-              <span style={styles.analysisLabel}>Business</span>
-              <span style={styles.analysisValue}>{analysis.businessName || 'Detected'}</span>
-            </div>
-            <div style={styles.analysisItem}>
-              <span style={styles.analysisLabel}>Industry</span>
-              <span style={styles.analysisValue}>{analysis.industry || 'Auto-detected'}</span>
-            </div>
-            <div style={styles.analysisItem}>
-              <span style={styles.analysisLabel}>Images Found</span>
-              <span style={styles.analysisValue}>{analysis.designSystem?.images?.length || 0}</span>
-            </div>
-            <div style={styles.analysisItem}>
-              <span style={styles.analysisLabel}>Headlines Found</span>
-              <span style={styles.analysisValue}>{analysis.pageContent?.headlines?.length || 0}</span>
+        <div style={rebuildStyles.resultsContainer}>
+          {/* Success Header */}
+          <div style={rebuildStyles.successHeader}>
+            <span style={rebuildStyles.checkIcon}>✅</span>
+            <div>
+              <div style={rebuildStyles.successTitle}>Site Analyzed: {analysis.businessName || 'Your Business'}</div>
+              <div style={rebuildStyles.successSubtitle}>
+                {analysis.industry} • {analysis.designSystem?.images?.length || 0} images • {analysis.pageContent?.headlines?.length || 0} headlines
+              </div>
             </div>
           </div>
 
-          {/* What don't you like? */}
-          <div style={styles.feedbackSection}>
-            <label style={styles.feedbackLabel}>What needs improvement? (select all that apply)</label>
-            <div style={styles.dislikeGrid}>
-              {dislikeOptions.map(opt => (
-                <button
-                  key={opt.id}
-                  style={{
-                    ...styles.dislikeChip,
-                    ...(dislikes.includes(opt.id) ? styles.dislikeChipActive : {})
-                  }}
-                  onClick={() => toggleDislike(opt.id)}
-                >
-                  <span>{opt.icon}</span>
-                  <span>{opt.label}</span>
-                </button>
-              ))}
+          {/* SECTION: Extracted Images */}
+          <div style={rebuildStyles.section}>
+            <div style={rebuildStyles.sectionHeader} onClick={() => setShowImages(!showImages)}>
+              <span style={rebuildStyles.sectionIcon}>🖼️</span>
+              <span style={rebuildStyles.sectionTitle}>Images Found ({selectedImages.size} selected)</span>
+              <span style={rebuildStyles.expandIcon}>{showImages ? '▼' : '▶'}</span>
+            </div>
+
+            {showImages && (
+              <div style={rebuildStyles.sectionContent}>
+                <div style={rebuildStyles.selectAllRow}>
+                  <button style={rebuildStyles.selectAllBtn} onClick={selectAllImages}>Select All</button>
+                  <button style={rebuildStyles.selectAllBtn} onClick={deselectAllImages}>Deselect All</button>
+                  <span style={rebuildStyles.selectHint}>Click images to keep them in your new site</span>
+                </div>
+
+                {getImagesByCategory().map(category => (
+                  <div key={category.name} style={rebuildStyles.imageCategory}>
+                    <div style={rebuildStyles.categoryLabel}>{category.icon} {category.name}</div>
+                    <div style={rebuildStyles.imageGrid}>
+                      {category.images.slice(0, 8).map((img, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            ...rebuildStyles.imageThumb,
+                            ...(selectedImages.has(img.src) ? rebuildStyles.imageThumbSelected : {})
+                          }}
+                          onClick={() => toggleImage(img.src)}
+                        >
+                          <img
+                            src={img.src}
+                            alt={img.alt || ''}
+                            style={rebuildStyles.imageImg}
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                          {selectedImages.has(img.src) && (
+                            <div style={rebuildStyles.imageCheck}>✓</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* SECTION: Headlines */}
+          {analysis.pageContent?.headlines?.length > 0 && (
+            <div style={rebuildStyles.section}>
+              <div style={rebuildStyles.sectionHeader} onClick={() => setShowHeadlines(!showHeadlines)}>
+                <span style={rebuildStyles.sectionIcon}>📝</span>
+                <span style={rebuildStyles.sectionTitle}>Headlines Found ({selectedHeadlines.size} selected)</span>
+                <span style={rebuildStyles.expandIcon}>{showHeadlines ? '▼' : '▶'}</span>
+              </div>
+
+              {showHeadlines && (
+                <div style={rebuildStyles.sectionContent}>
+                  <p style={rebuildStyles.sectionHint}>Select headlines to preserve (we'll improve the wording)</p>
+                  <div style={rebuildStyles.headlinesList}>
+                    {analysis.pageContent.headlines.slice(0, 10).map((headline, idx) => (
+                      <label
+                        key={idx}
+                        style={{
+                          ...rebuildStyles.headlineItem,
+                          ...(selectedHeadlines.has(headline) ? rebuildStyles.headlineItemSelected : {})
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedHeadlines.has(headline)}
+                          onChange={() => toggleHeadline(headline)}
+                          style={rebuildStyles.headlineCheckbox}
+                        />
+                        <span style={rebuildStyles.headlineText}>"{headline}"</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SECTION: Colors & Logo */}
+          <div style={rebuildStyles.section}>
+            <div style={rebuildStyles.sectionHeader}>
+              <span style={rebuildStyles.sectionIcon}>🎨</span>
+              <span style={rebuildStyles.sectionTitle}>Brand Elements</span>
+            </div>
+            <div style={rebuildStyles.sectionContent}>
+              <div style={rebuildStyles.brandRow}>
+                {/* Logo Toggle */}
+                <div style={rebuildStyles.brandOption}>
+                  <span style={rebuildStyles.brandLabel}>Logo</span>
+                  <div style={rebuildStyles.toggleRow}>
+                    <button
+                      style={{
+                        ...rebuildStyles.toggleBtn,
+                        ...(keepLogo ? rebuildStyles.toggleBtnActive : {})
+                      }}
+                      onClick={() => setKeepLogo(true)}
+                    >
+                      Keep Current
+                    </button>
+                    <button
+                      style={{
+                        ...rebuildStyles.toggleBtn,
+                        ...(!keepLogo ? rebuildStyles.toggleBtnActive : {})
+                      }}
+                      onClick={() => setKeepLogo(false)}
+                    >
+                      Upload New
+                    </button>
+                  </div>
+                </div>
+
+                {/* Colors Toggle */}
+                <div style={rebuildStyles.brandOption}>
+                  <span style={rebuildStyles.brandLabel}>Colors</span>
+                  {analysis.designSystem?.colors?.length > 0 && (
+                    <div style={rebuildStyles.colorPreview}>
+                      {analysis.designSystem.colors.slice(0, 5).map((color, idx) => (
+                        <div key={idx} style={{...rebuildStyles.colorDot, background: color}} title={color} />
+                      ))}
+                    </div>
+                  )}
+                  <div style={rebuildStyles.toggleRow}>
+                    <button
+                      style={{
+                        ...rebuildStyles.toggleBtn,
+                        ...(keepColors ? rebuildStyles.toggleBtnActive : {})
+                      }}
+                      onClick={() => setKeepColors(true)}
+                    >
+                      Keep These
+                    </button>
+                    <button
+                      style={{
+                        ...rebuildStyles.toggleBtn,
+                        ...(!keepColors ? rebuildStyles.toggleBtnActive : {})
+                      }}
+                      onClick={() => setKeepColors(false)}
+                    >
+                      New Colors
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Optional Notes */}
-          <div style={styles.feedbackSection}>
-            <label style={styles.feedbackLabel}>Anything else we should know? (optional)</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g., I want it to feel more premium, need better call-to-actions, competitor sites look better..."
-              style={styles.notesTextarea}
-              rows={3}
-            />
+          {/* SECTION: What You LIKE */}
+          <div style={rebuildStyles.section}>
+            <div style={rebuildStyles.sectionHeader}>
+              <span style={rebuildStyles.sectionIcon}>💚</span>
+              <span style={rebuildStyles.sectionTitle}>What do you LIKE about your current site?</span>
+            </div>
+            <div style={rebuildStyles.sectionContent}>
+              <p style={rebuildStyles.sectionHint}>We'll preserve these aspects</p>
+              <div style={rebuildStyles.chipGrid}>
+                {likeOptions.map(opt => (
+                  <button
+                    key={opt.id}
+                    style={{
+                      ...rebuildStyles.likeChip,
+                      ...(likes.includes(opt.id) ? rebuildStyles.likeChipActive : {})
+                    }}
+                    onClick={() => toggleLike(opt.id)}
+                  >
+                    <span>{opt.icon}</span>
+                    <span>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
-          {/* Optional Reference Sites */}
-          <div style={styles.feedbackSection}>
-            <button 
-              style={styles.toggleRefBtn}
+          {/* SECTION: What Needs Improvement */}
+          <div style={rebuildStyles.section}>
+            <div style={rebuildStyles.sectionHeader}>
+              <span style={rebuildStyles.sectionIcon}>🔧</span>
+              <span style={rebuildStyles.sectionTitle}>What needs improvement?</span>
+            </div>
+            <div style={rebuildStyles.sectionContent}>
+              <p style={rebuildStyles.sectionHint}>Select all that apply</p>
+              <div style={rebuildStyles.chipGrid}>
+                {dislikeOptions.map(opt => (
+                  <button
+                    key={opt.id}
+                    style={{
+                      ...rebuildStyles.dislikeChip,
+                      ...(dislikes.includes(opt.id) ? rebuildStyles.dislikeChipActive : {})
+                    }}
+                    onClick={() => toggleDislike(opt.id)}
+                  >
+                    <span>{opt.icon}</span>
+                    <span>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION: Notes & Vision */}
+          <div style={rebuildStyles.section}>
+            <div style={rebuildStyles.sectionHeader}>
+              <span style={rebuildStyles.sectionIcon}>💭</span>
+              <span style={rebuildStyles.sectionTitle}>Describe your ideal result</span>
+            </div>
+            <div style={rebuildStyles.sectionContent}>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="e.g., Make it feel more premium like a modern restaurant. Keep our family story but present it better. I want customers to trust us immediately..."
+                style={rebuildStyles.notesTextarea}
+                rows={3}
+              />
+            </div>
+          </div>
+
+          {/* SECTION: Inspiration Sites (Optional) */}
+          <div style={rebuildStyles.section}>
+            <div
+              style={rebuildStyles.sectionHeader}
               onClick={() => setShowReferences(!showReferences)}
             >
-              {showReferences ? '➖' : '➕'} Add inspiration sites (optional)
-            </button>
-            
+              <span style={rebuildStyles.sectionIcon}>✨</span>
+              <span style={rebuildStyles.sectionTitle}>Inspiration Sites (Optional)</span>
+              <span style={rebuildStyles.expandIcon}>{showReferences ? '▼' : '▶'}</span>
+            </div>
+
             {showReferences && (
-              <div style={styles.refSitesContainer}>
-                <p style={styles.refHintText}>Show us sites you like - we'll blend their best parts into your rebuild</p>
+              <div style={rebuildStyles.sectionContent}>
+                <p style={rebuildStyles.sectionHint}>Show us sites you admire - we'll blend their best parts</p>
                 {references.map((ref, idx) => (
-                  <div key={idx} style={styles.refSiteRow}>
+                  <div key={idx} style={rebuildStyles.refSiteRow}>
                     <input
                       type="text"
                       value={ref.url}
@@ -842,34 +1291,32 @@ function RebuildStep({ projectData, updateProject, onContinue, onBack }) {
                         setReferences(newRefs);
                       }}
                       placeholder="https://example.com"
-                      style={styles.refSiteInput}
+                      style={rebuildStyles.refSiteInput}
                     />
+                    {idx > 0 && (
+                      <button
+                        style={rebuildStyles.removeRefBtn}
+                        onClick={() => setReferences(references.filter((_, i) => i !== idx))}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 ))}
                 {references.length < 3 && (
-                  <button 
-                    style={styles.addRefBtn}
+                  <button
+                    style={rebuildStyles.addRefBtn}
                     onClick={() => setReferences([...references, { url: '', likes: [], notes: '' }])}
                   >
-                    + Add another
+                    + Add another site
                   </button>
                 )}
               </div>
             )}
           </div>
 
-          <button style={styles.continueBtn} onClick={() => {
-            // Update with all feedback before continuing
-            updateProject({
-              existingSite: {
-                ...analysis,
-                dislikes: dislikes,
-                userNotes: notes,
-                referenceInspiration: references.filter(r => r.url.trim())
-              }
-            });
-            onContinue();
-          }}>
+          {/* Continue Button */}
+          <button style={rebuildStyles.continueBtn} onClick={handleContinue}>
             Continue to Customize →
           </button>
         </div>
@@ -880,12 +1327,318 @@ function RebuildStep({ projectData, updateProject, onContinue, onBack }) {
         <div style={styles.emptyState}>
           <div style={styles.emptyIcon}>🌐</div>
           <p>Enter your website URL above</p>
-          <p style={styles.emptyHint}>We'll extract your content, colors, and structure</p>
+          <p style={styles.emptyHint}>We'll extract your content, colors, images, and structure</p>
         </div>
       )}
     </div>
   );
 }
+
+// Rebuild Step Styles
+const rebuildStyles = {
+  resultsContainer: {
+    marginTop: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px'
+  },
+  successHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    padding: '20px 24px',
+    background: 'rgba(34, 197, 94, 0.1)',
+    borderRadius: '12px',
+    border: '1px solid rgba(34, 197, 94, 0.3)'
+  },
+  checkIcon: {
+    fontSize: '32px'
+  },
+  successTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#fff'
+  },
+  successSubtitle: {
+    fontSize: '14px',
+    color: '#888',
+    marginTop: '4px'
+  },
+  section: {
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255,255,255,0.08)',
+    overflow: 'hidden'
+  },
+  sectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '16px 20px',
+    cursor: 'pointer',
+    borderBottom: '1px solid rgba(255,255,255,0.05)'
+  },
+  sectionIcon: {
+    fontSize: '20px'
+  },
+  sectionTitle: {
+    flex: 1,
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#e4e4e4'
+  },
+  expandIcon: {
+    color: '#666',
+    fontSize: '12px'
+  },
+  sectionContent: {
+    padding: '16px 20px'
+  },
+  sectionHint: {
+    color: '#888',
+    fontSize: '13px',
+    marginBottom: '12px'
+  },
+  selectAllRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '16px'
+  },
+  selectAllBtn: {
+    padding: '6px 12px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '6px',
+    color: '#888',
+    fontSize: '12px',
+    cursor: 'pointer'
+  },
+  selectHint: {
+    color: '#666',
+    fontSize: '12px',
+    marginLeft: 'auto'
+  },
+  imageCategory: {
+    marginBottom: '16px'
+  },
+  categoryLabel: {
+    fontSize: '13px',
+    fontWeight: '500',
+    color: '#888',
+    marginBottom: '8px'
+  },
+  imageGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
+    gap: '8px'
+  },
+  imageThumb: {
+    position: 'relative',
+    aspectRatio: '1',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    border: '2px solid transparent',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    background: 'rgba(255,255,255,0.05)'
+  },
+  imageThumbSelected: {
+    border: '2px solid #22c55e',
+    boxShadow: '0 0 0 2px rgba(34, 197, 94, 0.3)'
+  },
+  imageImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover'
+  },
+  imageCheck: {
+    position: 'absolute',
+    top: '4px',
+    right: '4px',
+    width: '20px',
+    height: '20px',
+    background: '#22c55e',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#fff',
+    fontSize: '12px',
+    fontWeight: '700'
+  },
+  headlinesList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  headlineItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    padding: '12px 16px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '8px',
+    border: '1px solid rgba(255,255,255,0.05)',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  headlineItemSelected: {
+    background: 'rgba(34, 197, 94, 0.1)',
+    border: '1px solid rgba(34, 197, 94, 0.3)'
+  },
+  headlineCheckbox: {
+    marginTop: '2px',
+    accentColor: '#22c55e'
+  },
+  headlineText: {
+    fontSize: '14px',
+    color: '#e4e4e4',
+    lineHeight: '1.4'
+  },
+  brandRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '24px'
+  },
+  brandOption: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  brandLabel: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#e4e4e4'
+  },
+  colorPreview: {
+    display: 'flex',
+    gap: '6px',
+    marginBottom: '4px'
+  },
+  colorDot: {
+    width: '24px',
+    height: '24px',
+    borderRadius: '6px',
+    border: '2px solid rgba(255,255,255,0.2)'
+  },
+  toggleRow: {
+    display: 'flex',
+    gap: '8px'
+  },
+  toggleBtn: {
+    flex: 1,
+    padding: '10px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px',
+    color: '#888',
+    fontSize: '13px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  toggleBtnActive: {
+    background: 'rgba(34, 197, 94, 0.15)',
+    border: '1px solid #22c55e',
+    color: '#22c55e'
+  },
+  chipGrid: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px'
+  },
+  likeChip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 14px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '20px',
+    color: '#888',
+    fontSize: '13px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  likeChipActive: {
+    background: 'rgba(34, 197, 94, 0.15)',
+    border: '1px solid #22c55e',
+    color: '#22c55e'
+  },
+  dislikeChip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 14px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '20px',
+    color: '#888',
+    fontSize: '13px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  dislikeChipActive: {
+    background: 'rgba(239, 68, 68, 0.15)',
+    border: '1px solid #ef4444',
+    color: '#ef4444'
+  },
+  notesTextarea: {
+    width: '100%',
+    padding: '14px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '10px',
+    color: '#e4e4e4',
+    fontSize: '14px',
+    resize: 'vertical',
+    outline: 'none'
+  },
+  refSiteRow: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '8px'
+  },
+  refSiteInput: {
+    flex: 1,
+    padding: '12px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px',
+    color: '#e4e4e4',
+    fontSize: '14px',
+    outline: 'none'
+  },
+  removeRefBtn: {
+    padding: '12px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px',
+    color: '#888',
+    cursor: 'pointer'
+  },
+  addRefBtn: {
+    padding: '10px 16px',
+    background: 'transparent',
+    border: '1px dashed rgba(255,255,255,0.2)',
+    borderRadius: '8px',
+    color: '#888',
+    fontSize: '13px',
+    cursor: 'pointer',
+    width: '100%'
+  },
+  continueBtn: {
+    padding: '18px 32px',
+    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#fff',
+    fontSize: '16px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    marginTop: '8px'
+  }
+};
 
 // ============================================
 // QUICK PATH: Just Describe It
@@ -1387,38 +2140,93 @@ function UploadAssetsStep({ projectData, updateProject, onContinue, onBack, onSk
 // REFERENCE PATH: Show Sites You Like
 // ============================================
 function ReferenceStep({ projectData, updateProject, onContinue, onBack }) {
-  const [sites, setSites] = useState([{ url: '', notes: '', analysis: null, likes: [] }]);
+  // Sites with enhanced structure
+  const [sites, setSites] = useState([{
+    url: '',
+    notes: '',
+    analysis: null,
+    screenshotUrl: null,
+    isPrimary: true,
+    elements: [] // What elements to grab from this site
+  }]);
   const [analyzing, setAnalyzing] = useState(null);
   const [businessDescription, setBusinessDescription] = useState('');
-  
-  // What they LIKE about reference sites
-  const likeOptions = [
-    { id: 'colors', label: 'Colors', icon: '🎨' },
-    { id: 'layout', label: 'Layout', icon: '📐' },
-    { id: 'typography', label: 'Typography', icon: '🔤' },
-    { id: 'animations', label: 'Animations', icon: '✨' },
-    { id: 'hero', label: 'Hero section', icon: '🦸' },
-    { id: 'navigation', label: 'Navigation', icon: '🧭' },
-    { id: 'cards', label: 'Card design', icon: '🃏' },
-    { id: 'spacing', label: 'Spacing/whitespace', icon: '📏' },
-    { id: 'images', label: 'Image style', icon: '🖼️' },
-    { id: 'cta', label: 'Call-to-actions', icon: '👆' },
-    { id: 'footer', label: 'Footer', icon: '🦶' },
-    { id: 'overall', label: 'Overall vibe', icon: '💫' },
+  const [businessName, setBusinessName] = useState('');
+
+  // Sub-step: 'input' | 'preview'
+  const [subStep, setSubStep] = useState('input');
+
+  // Element options - what can be grabbed from each site
+  const elementOptions = [
+    { id: 'colors', label: 'Color Scheme', icon: '🎨', description: 'Use this site\'s color palette' },
+    { id: 'typography', label: 'Typography', icon: '🔤', description: 'Font choices and text styling' },
+    { id: 'layout', label: 'Layout Structure', icon: '📐', description: 'How sections are arranged' },
+    { id: 'hero', label: 'Hero Section', icon: '🦸', description: 'The main banner/header area' },
+    { id: 'navigation', label: 'Navigation', icon: '🧭', description: 'Menu and nav bar style' },
+    { id: 'cards', label: 'Card Design', icon: '🃏', description: 'How content cards look' },
+    { id: 'spacing', label: 'Whitespace', icon: '📏', description: 'Breathing room between elements' },
+    { id: 'cta', label: 'CTAs & Buttons', icon: '👆', description: 'Call-to-action button styles' },
+    { id: 'footer', label: 'Footer', icon: '🦶', description: 'Bottom section design' },
+    { id: 'overall', label: 'Overall Vibe', icon: '💫', description: 'General aesthetic and feeling' },
   ];
-  
-  const toggleLike = (siteIndex, likeId) => {
+
+  // Industry-specific site suggestions
+  const industrySuggestions = {
+    'dental': [
+      { name: 'Tend', url: 'hellotend.com', desc: 'Modern dental experience' },
+      { name: 'Aspen Dental', url: 'aspendental.com', desc: 'Friendly, approachable' },
+      { name: 'One Medical', url: 'onemedical.com', desc: 'Clean healthcare design' },
+    ],
+    'restaurant': [
+      { name: 'Sweetgreen', url: 'sweetgreen.com', desc: 'Fresh, modern food brand' },
+      { name: 'Chipotle', url: 'chipotle.com', desc: 'Bold, confident' },
+      { name: 'Shake Shack', url: 'shakeshack.com', desc: 'Fun, approachable' },
+    ],
+    'saas': [
+      { name: 'Stripe', url: 'stripe.com', desc: 'Premium tech aesthetic' },
+      { name: 'Linear', url: 'linear.app', desc: 'Clean, minimal SaaS' },
+      { name: 'Notion', url: 'notion.so', desc: 'Friendly, spacious' },
+    ],
+    'default': [
+      { name: 'Stripe', url: 'stripe.com', desc: 'Premium, professional' },
+      { name: 'Airbnb', url: 'airbnb.com', desc: 'Warm, trustworthy' },
+      { name: 'Linear', url: 'linear.app', desc: 'Clean, modern' },
+      { name: 'Vercel', url: 'vercel.com', desc: 'Bold, developer-focused' },
+    ]
+  };
+
+  const getSuggestions = () => {
+    const industry = projectData.industryKey || 'default';
+    return industrySuggestions[industry] || industrySuggestions['default'];
+  };
+
+  const toggleElement = (siteIndex, elementId) => {
     const newSites = [...sites];
-    const currentLikes = newSites[siteIndex].likes || [];
-    newSites[siteIndex].likes = currentLikes.includes(likeId) 
-      ? currentLikes.filter(l => l !== likeId)
-      : [...currentLikes, likeId];
+    const currentElements = newSites[siteIndex].elements || [];
+    newSites[siteIndex].elements = currentElements.includes(elementId)
+      ? currentElements.filter(e => e !== elementId)
+      : [...currentElements, elementId];
+    setSites(newSites);
+  };
+
+  const setPrimary = (index) => {
+    const newSites = sites.map((site, i) => ({
+      ...site,
+      isPrimary: i === index
+    }));
     setSites(newSites);
   };
 
   const addSite = () => {
     if (sites.length < 3) {
-      setSites([...sites, { url: '', notes: '', analysis: null, likes: [] }]);
+      setSites([...sites, {
+        url: '',
+        notes: '',
+        analysis: null,
+        screenshotUrl: null,
+        isPrimary: false,
+        elements: []
+      }]);
     }
   };
 
@@ -1427,37 +2235,62 @@ function ReferenceStep({ projectData, updateProject, onContinue, onBack }) {
     newSites[index] = { ...newSites[index], [field]: value };
     setSites(newSites);
   };
-  
+
   const removeSite = (index) => {
     if (sites.length > 1) {
-      setSites(sites.filter((_, i) => i !== index));
+      let newSites = sites.filter((_, i) => i !== index);
+      // If we removed the primary, make first one primary
+      if (sites[index].isPrimary && newSites.length > 0) {
+        newSites[0].isPrimary = true;
+      }
+      setSites(newSites);
     }
+  };
+
+  const getScreenshotUrl = (url) => {
+    if (!url) return null;
+    let cleanUrl = url.trim();
+    if (!cleanUrl.startsWith('http')) cleanUrl = 'https://' + cleanUrl;
+    return `https://image.thum.io/get/width/400/crop/300/png/${cleanUrl}`;
   };
 
   const analyzeSite = async (index) => {
     const site = sites[index];
     if (!site.url.trim()) return;
-    
+
     setAnalyzing(index);
-    
+
     try {
       let cleanUrl = site.url.trim();
       if (!cleanUrl.startsWith('http')) {
         cleanUrl = 'https://' + cleanUrl;
       }
-      
+
+      // Set screenshot URL immediately
+      const newSites = [...sites];
+      newSites[index].screenshotUrl = getScreenshotUrl(cleanUrl);
+      setSites(newSites);
+
       const response = await fetch(`${API_BASE}/api/analyze-site`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: cleanUrl })
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
-        const newSites = [...sites];
-        newSites[index] = { ...newSites[index], analysis: data.analysis };
-        setSites(newSites);
+        const updatedSites = [...sites];
+        updatedSites[index] = {
+          ...updatedSites[index],
+          analysis: data.analysis,
+          screenshotUrl: getScreenshotUrl(cleanUrl),
+          // Auto-select some elements based on analysis
+          elements: updatedSites[index].isPrimary
+            ? ['colors', 'typography', 'overall']
+            : ['cards', 'spacing']
+        };
+        setSites(updatedSites);
       }
     } catch (err) {
       console.error('Analysis failed:', err);
@@ -1466,163 +2299,880 @@ function ReferenceStep({ projectData, updateProject, onContinue, onBack }) {
     }
   };
 
+  const useSuggestion = (suggestion) => {
+    const newSites = [...sites];
+    const emptyIndex = newSites.findIndex(s => !s.url.trim());
+    if (emptyIndex >= 0) {
+      newSites[emptyIndex].url = suggestion.url;
+      setSites(newSites);
+    } else if (newSites.length < 3) {
+      setSites([...newSites, {
+        url: suggestion.url,
+        notes: '',
+        analysis: null,
+        screenshotUrl: null,
+        isPrimary: false,
+        elements: []
+      }]);
+    }
+  };
+
+  const goToPreview = () => {
+    setSubStep('preview');
+  };
+
   const handleContinue = () => {
-    // Extract colors from analyzed sites if available
-    const analyzedSite = sites.find(s => s.analysis?.colors);
-    if (analyzedSite?.analysis?.colors) {
+    // Find primary site for colors
+    const primarySite = sites.find(s => s.isPrimary && s.analysis?.colors);
+
+    if (primarySite?.analysis?.colors) {
       updateProject({
         colors: {
-          primary: analyzedSite.analysis.colors.primary || projectData.colors.primary,
-          secondary: analyzedSite.analysis.colors.secondary || projectData.colors.secondary,
-          accent: analyzedSite.analysis.colors.accent || projectData.colors.accent,
+          primary: primarySite.analysis.colors.primary || projectData.colors.primary,
+          secondary: primarySite.analysis.colors.secondary || projectData.colors.secondary,
+          accent: primarySite.analysis.colors.accent || projectData.colors.accent,
           text: projectData.colors.text,
           background: projectData.colors.background
         },
         colorMode: 'from-site'
       });
     }
-    
-    // Build enhanced reference data with likes and notes
+
+    // Build enhanced reference data
     const enhancedSites = sites.filter(s => s.url.trim()).map(s => ({
       url: s.url,
       notes: s.notes,
-      likes: s.likes || [],
-      analysis: s.analysis,
-      likeLabels: (s.likes || []).map(id => likeOptions.find(o => o.id === id)?.label).filter(Boolean)
+      isPrimary: s.isPrimary,
+      elements: s.elements || [],
+      elementLabels: (s.elements || []).map(id => elementOptions.find(o => o.id === id)?.label).filter(Boolean),
+      analysis: s.analysis
     }));
-    
+
     updateProject({
       referenceSites: enhancedSites,
-      businessName: businessDescription || projectData.businessName,
+      businessName: businessName || businessDescription || projectData.businessName,
       tagline: businessDescription || projectData.tagline
     });
-    
+
     onContinue();
   };
 
   const validSites = sites.filter(s => s.url.trim()).length;
+  const analyzedSites = sites.filter(s => s.analysis).length;
+
+  // Get blend preview summary
+  const getBlendSummary = () => {
+    const primary = sites.find(s => s.isPrimary);
+    const secondary = sites.filter(s => !s.isPrimary && s.url.trim());
+
+    let summary = {
+      colors: null,
+      typography: null,
+      style: null,
+      elements: []
+    };
+
+    // Colors from primary or first analyzed
+    if (primary?.analysis?.colors) {
+      summary.colors = primary.analysis.colors;
+    }
+
+    // Style from primary
+    if (primary?.analysis) {
+      summary.style = primary.analysis.style;
+      summary.typography = primary.analysis.fonts;
+    }
+
+    // Collect all selected elements
+    sites.forEach((site, idx) => {
+      (site.elements || []).forEach(el => {
+        const opt = elementOptions.find(o => o.id === el);
+        if (opt) {
+          summary.elements.push({
+            element: opt.label,
+            icon: opt.icon,
+            from: site.url.replace('https://', '').split('/')[0],
+            isPrimary: site.isPrimary
+          });
+        }
+      });
+    });
+
+    return summary;
+  };
+
+  // INPUT SUBSTEP
+  if (subStep === 'input') {
+    return (
+      <div style={styles.stepContainer}>
+        <button style={styles.backBtn} onClick={onBack}>← Back</button>
+
+        <h1 style={styles.stepTitle}>🎨 Get Inspired</h1>
+        <p style={styles.stepSubtitle}>Show us sites you love - we'll blend their best elements</p>
+
+        {/* Business Info */}
+        <div style={inspiredStyles.businessSection}>
+          <div style={inspiredStyles.businessRow}>
+            <div style={inspiredStyles.businessField}>
+              <label style={inspiredStyles.fieldLabel}>Business Name</label>
+              <input
+                type="text"
+                value={businessName}
+                onChange={(e) => setBusinessName(e.target.value)}
+                placeholder="Your Business Name"
+                style={inspiredStyles.fieldInput}
+              />
+            </div>
+            <div style={inspiredStyles.businessField}>
+              <label style={inspiredStyles.fieldLabel}>What do you do?</label>
+              <input
+                type="text"
+                value={businessDescription}
+                onChange={(e) => setBusinessDescription(e.target.value)}
+                placeholder="e.g., Modern dental clinic in Austin"
+                style={inspiredStyles.fieldInput}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Suggestions */}
+        <div style={inspiredStyles.suggestionsSection}>
+          <div style={inspiredStyles.suggestionsHeader}>
+            <span style={inspiredStyles.suggestionsIcon}>💡</span>
+            <span style={inspiredStyles.suggestionsTitle}>Popular Inspirations</span>
+          </div>
+          <div style={inspiredStyles.suggestionsList}>
+            {getSuggestions().map(s => (
+              <button
+                key={s.url}
+                style={inspiredStyles.suggestionChip}
+                onClick={() => useSuggestion(s)}
+              >
+                <span style={inspiredStyles.suggestionName}>{s.name}</span>
+                <span style={inspiredStyles.suggestionDesc}>{s.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Sites Input */}
+        <div style={inspiredStyles.sitesContainer}>
+          {sites.map((site, index) => (
+            <div
+              key={index}
+              style={{
+                ...inspiredStyles.siteCard,
+                ...(site.isPrimary ? inspiredStyles.siteCardPrimary : {})
+              }}
+            >
+              {/* Site Header */}
+              <div style={inspiredStyles.siteHeader}>
+                <div style={inspiredStyles.siteHeaderLeft}>
+                  <span style={inspiredStyles.siteNumber}>Site {index + 1}</span>
+                  {site.isPrimary && <span style={inspiredStyles.primaryBadge}>Primary</span>}
+                </div>
+                <div style={inspiredStyles.siteHeaderRight}>
+                  {site.analysis && <span style={inspiredStyles.analyzedBadge}>✓ Analyzed</span>}
+                  {sites.length > 1 && (
+                    <button style={inspiredStyles.removeSiteBtn} onClick={() => removeSite(index)}>✕</button>
+                  )}
+                </div>
+              </div>
+
+              {/* URL Input */}
+              <div style={inspiredStyles.urlRow}>
+                <input
+                  type="text"
+                  value={site.url}
+                  onChange={(e) => updateSite(index, 'url', e.target.value)}
+                  placeholder="stripe.com"
+                  style={inspiredStyles.urlInput}
+                />
+                {site.url && !site.analysis && (
+                  <button
+                    onClick={() => analyzeSite(index)}
+                    disabled={analyzing === index}
+                    style={inspiredStyles.analyzeBtn}
+                  >
+                    {analyzing === index ? '⏳' : '🔍'} {analyzing === index ? 'Analyzing...' : 'Analyze'}
+                  </button>
+                )}
+              </div>
+
+              {/* Screenshot Preview */}
+              {site.screenshotUrl && (
+                <div style={inspiredStyles.screenshotContainer}>
+                  <img
+                    src={site.screenshotUrl}
+                    alt="Site preview"
+                    style={inspiredStyles.screenshot}
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                </div>
+              )}
+
+              {/* Analysis Results */}
+              {site.analysis && (
+                <div style={inspiredStyles.analysisResults}>
+                  {/* Extracted Colors */}
+                  {site.analysis.colors && (
+                    <div style={inspiredStyles.colorsRow}>
+                      <span style={inspiredStyles.colorsLabel}>Colors:</span>
+                      <div style={{...inspiredStyles.colorDot, background: site.analysis.colors.primary}} />
+                      <div style={{...inspiredStyles.colorDot, background: site.analysis.colors.secondary}} />
+                      <div style={{...inspiredStyles.colorDot, background: site.analysis.colors.accent}} />
+                      {site.analysis.style && (
+                        <span style={inspiredStyles.styleLabel}>{site.analysis.style}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Primary/Secondary Toggle */}
+                  <div style={inspiredStyles.priorityRow}>
+                    <span style={inspiredStyles.priorityLabel}>Use as:</span>
+                    <div style={inspiredStyles.priorityToggle}>
+                      <button
+                        style={{
+                          ...inspiredStyles.priorityBtn,
+                          ...(site.isPrimary ? inspiredStyles.priorityBtnActive : {})
+                        }}
+                        onClick={() => setPrimary(index)}
+                      >
+                        Primary Source
+                      </button>
+                      <button
+                        style={{
+                          ...inspiredStyles.priorityBtn,
+                          ...(!site.isPrimary ? inspiredStyles.priorityBtnSecondary : {})
+                        }}
+                        onClick={() => {
+                          if (site.isPrimary && sites.filter(s => s.url.trim()).length > 1) {
+                            // Find another site to make primary
+                            const otherIdx = sites.findIndex((s, i) => i !== index && s.url.trim());
+                            if (otherIdx >= 0) setPrimary(otherIdx);
+                          }
+                        }}
+                      >
+                        Secondary
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Element Selection */}
+                  <div style={inspiredStyles.elementsSection}>
+                    <span style={inspiredStyles.elementsLabel}>
+                      {site.isPrimary ? 'Primary elements (use most of this site\'s style):' : 'Pick specific elements from this site:'}
+                    </span>
+                    <div style={inspiredStyles.elementsGrid}>
+                      {elementOptions.map(opt => (
+                        <button
+                          key={opt.id}
+                          style={{
+                            ...inspiredStyles.elementChip,
+                            ...((site.elements || []).includes(opt.id) ? inspiredStyles.elementChipActive : {})
+                          }}
+                          onClick={() => toggleElement(index, opt.id)}
+                          title={opt.description}
+                        >
+                          <span>{opt.icon}</span>
+                          <span>{opt.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              <textarea
+                value={site.notes}
+                onChange={(e) => updateSite(index, 'notes', e.target.value)}
+                placeholder="Specific notes... e.g., 'Love the floating navbar' or 'The testimonials section is perfect'"
+                style={inspiredStyles.notesInput}
+                rows={2}
+              />
+            </div>
+          ))}
+
+          {sites.length < 3 && (
+            <button style={inspiredStyles.addSiteBtn} onClick={addSite}>
+              + Add Another Inspiration Site
+            </button>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={inspiredStyles.footer}>
+          <button
+            style={{
+              ...inspiredStyles.continueBtn,
+              opacity: (validSites === 0 || !businessName.trim()) ? 0.5 : 1
+            }}
+            onClick={analyzedSites > 0 ? goToPreview : handleContinue}
+            disabled={validSites === 0 || !businessName.trim()}
+          >
+            {analyzedSites > 0 ? 'Preview Your Blend →' : 'Continue →'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // PREVIEW SUBSTEP (Blend Preview)
+  const blendSummary = getBlendSummary();
 
   return (
     <div style={styles.stepContainer}>
-      <button style={styles.backBtn} onClick={onBack}>← Back</button>
-      
-      <h1 style={styles.stepTitle}>🎨 Show Us Sites You Love</h1>
-      <p style={styles.stepSubtitle}>We'll extract the best parts and build something unique for you</p>
+      <button style={styles.backBtn} onClick={() => setSubStep('input')}>← Back to Sites</button>
 
-      {/* Business Description First */}
-      <div style={styles.inspiredBusinessSection}>
-        <label style={styles.feedbackLabel}>What are you building?</label>
-        <input
-          type="text"
-          value={businessDescription}
-          onChange={(e) => setBusinessDescription(e.target.value)}
-          placeholder="e.g., Modern dental clinic in Austin, Artisan coffee roastery..."
-          style={styles.bigInput}
-        />
-      </div>
+      <h1 style={styles.stepTitle}>✨ Your Design Blend</h1>
+      <p style={styles.stepSubtitle}>Here's what we'll create based on your selections</p>
 
-      <div style={styles.sitesContainer}>
-        {sites.map((site, index) => (
-          <div key={index} style={styles.siteCard}>
-            <div style={styles.siteHeader}>
-              <span style={styles.siteNumber}>Inspiration #{index + 1}</span>
-              <div style={styles.siteHeaderRight}>
-                {site.analysis && <span style={styles.analyzedBadge}>✓ Analyzed</span>}
-                {sites.length > 1 && (
-                  <button style={styles.removeSiteBtn} onClick={() => removeSite(index)}>✕</button>
-                )}
+      <div style={inspiredStyles.previewContainer}>
+        {/* Color Palette */}
+        {blendSummary.colors && (
+          <div style={inspiredStyles.previewSection}>
+            <div style={inspiredStyles.previewSectionHeader}>
+              <span style={inspiredStyles.previewIcon}>🎨</span>
+              <span style={inspiredStyles.previewTitle}>Color Palette</span>
+              <span style={inspiredStyles.previewSource}>
+                from {sites.find(s => s.isPrimary)?.url?.replace('https://', '').split('/')[0] || 'primary'}
+              </span>
+            </div>
+            <div style={inspiredStyles.colorPalette}>
+              <div style={inspiredStyles.colorBlock}>
+                <div style={{...inspiredStyles.colorSwatch, background: blendSummary.colors.primary}} />
+                <span style={inspiredStyles.colorLabel}>Primary</span>
+                <span style={inspiredStyles.colorValue}>{blendSummary.colors.primary}</span>
+              </div>
+              <div style={inspiredStyles.colorBlock}>
+                <div style={{...inspiredStyles.colorSwatch, background: blendSummary.colors.secondary}} />
+                <span style={inspiredStyles.colorLabel}>Secondary</span>
+                <span style={inspiredStyles.colorValue}>{blendSummary.colors.secondary}</span>
+              </div>
+              <div style={inspiredStyles.colorBlock}>
+                <div style={{...inspiredStyles.colorSwatch, background: blendSummary.colors.accent}} />
+                <span style={inspiredStyles.colorLabel}>Accent</span>
+                <span style={inspiredStyles.colorValue}>{blendSummary.colors.accent}</span>
               </div>
             </div>
-            
-            <input
-              type="text"
-              value={site.url}
-              onChange={(e) => updateSite(index, 'url', e.target.value)}
-              placeholder="https://example.com"
-              style={styles.siteInput}
-            />
-            
-            {site.url && !site.analysis && (
-              <button 
-                onClick={() => analyzeSite(index)}
-                disabled={analyzing === index}
-                style={styles.analyzeBtn}
-              >
-                {analyzing === index ? '⏳ Analyzing...' : '🔍 Analyze Style'}
-              </button>
-            )}
-            
-            {site.analysis && (
-              <>
-                <div style={styles.siteAnalysis}>
-                  {site.analysis.colors && (
-                    <div style={styles.extractedColors}>
-                      <span>Colors:</span>
-                      <div style={{...styles.colorDot, background: site.analysis.colors.primary}} />
-                      <div style={{...styles.colorDot, background: site.analysis.colors.secondary}} />
-                      <div style={{...styles.colorDot, background: site.analysis.colors.accent}} />
-                    </div>
-                  )}
-                  {site.analysis.style && (
-                    <span style={styles.extractedStyle}>Style: {site.analysis.style}</span>
-                  )}
-                </div>
-                
-                {/* What do you like toggles */}
-                <div style={styles.likesSection}>
-                  <label style={styles.likesLabel}>What do you like about this site?</label>
-                  <div style={styles.likesGrid}>
-                    {likeOptions.map(opt => (
-                      <button
-                        key={opt.id}
-                        style={{
-                          ...styles.likeChip,
-                          ...((site.likes || []).includes(opt.id) ? styles.likeChipActive : {})
-                        }}
-                        onClick={() => toggleLike(index, opt.id)}
-                      >
-                        <span>{opt.icon}</span>
-                        <span>{opt.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-            
-            {/* Notes always visible */}
-            <textarea
-              value={site.notes}
-              onChange={(e) => updateSite(index, 'notes', e.target.value)}
-              placeholder="Any specific details? (optional) e.g., 'Love the floating navbar' or 'The testimonial section is perfect'"
-              style={styles.siteNotes}
-              rows={2}
-            />
           </div>
-        ))}
-        
-        {sites.length < 3 && (
-          <button style={styles.addSiteBtn} onClick={addSite}>
-            + Add Another Site
-          </button>
         )}
+
+        {/* Style Direction */}
+        <div style={inspiredStyles.previewSection}>
+          <div style={inspiredStyles.previewSectionHeader}>
+            <span style={inspiredStyles.previewIcon}>💫</span>
+            <span style={inspiredStyles.previewTitle}>Style Direction</span>
+          </div>
+          <p style={inspiredStyles.styleDescription}>
+            {blendSummary.style ? `${blendSummary.style.charAt(0).toUpperCase() + blendSummary.style.slice(1)} aesthetic` : 'Modern, professional design'} with elements carefully selected from your inspiration sites.
+          </p>
+        </div>
+
+        {/* Elements Breakdown */}
+        <div style={inspiredStyles.previewSection}>
+          <div style={inspiredStyles.previewSectionHeader}>
+            <span style={inspiredStyles.previewIcon}>🧩</span>
+            <span style={inspiredStyles.previewTitle}>Elements We'll Use</span>
+          </div>
+          <div style={inspiredStyles.elementsBreakdown}>
+            {blendSummary.elements.map((el, idx) => (
+              <div key={idx} style={inspiredStyles.elementItem}>
+                <span style={inspiredStyles.elementIcon}>{el.icon}</span>
+                <span style={inspiredStyles.elementName}>{el.element}</span>
+                <span style={inspiredStyles.elementFrom}>from {el.from}</span>
+                {el.isPrimary && <span style={inspiredStyles.elementPrimaryTag}>primary</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Sites Used */}
+        <div style={inspiredStyles.previewSection}>
+          <div style={inspiredStyles.previewSectionHeader}>
+            <span style={inspiredStyles.previewIcon}>🔗</span>
+            <span style={inspiredStyles.previewTitle}>Inspiration Sources</span>
+          </div>
+          <div style={inspiredStyles.sourcesGrid}>
+            {sites.filter(s => s.url.trim()).map((site, idx) => (
+              <div key={idx} style={inspiredStyles.sourceCard}>
+                {site.screenshotUrl && (
+                  <img
+                    src={site.screenshotUrl}
+                    alt=""
+                    style={inspiredStyles.sourceThumb}
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                )}
+                <div style={inspiredStyles.sourceInfo}>
+                  <span style={inspiredStyles.sourceUrl}>{site.url.replace('https://', '').split('/')[0]}</span>
+                  {site.isPrimary && <span style={inspiredStyles.sourcePrimary}>Primary</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <div style={styles.refFooter}>
-        <p style={styles.refHint}>
-          💡 Pro tip: Sites like Stripe, Linear, and Notion have great design patterns
-        </p>
-        <button 
-          style={{...styles.continueBtn, opacity: (validSites === 0 || !businessDescription.trim()) ? 0.5 : 1}}
-          onClick={handleContinue}
-          disabled={validSites === 0 || !businessDescription.trim()}
-        >
-          Continue with {validSites} site{validSites !== 1 ? 's' : ''} →
+      {/* Footer */}
+      <div style={inspiredStyles.previewFooter}>
+        <button style={inspiredStyles.backToEditBtn} onClick={() => setSubStep('input')}>
+          ← Adjust Selections
+        </button>
+        <button style={inspiredStyles.continueBtn} onClick={handleContinue}>
+          Looks Good! Continue →
         </button>
       </div>
     </div>
   );
 }
+
+// Inspiration Step Styles
+const inspiredStyles = {
+  businessSection: {
+    marginBottom: '24px'
+  },
+  businessRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '16px'
+  },
+  businessField: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px'
+  },
+  fieldLabel: {
+    fontSize: '13px',
+    fontWeight: '500',
+    color: '#888'
+  },
+  fieldInput: {
+    padding: '14px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '10px',
+    color: '#e4e4e4',
+    fontSize: '15px',
+    outline: 'none'
+  },
+  suggestionsSection: {
+    marginBottom: '24px',
+    padding: '16px 20px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255,255,255,0.05)'
+  },
+  suggestionsHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '12px'
+  },
+  suggestionsIcon: {
+    fontSize: '16px'
+  },
+  suggestionsTitle: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#888'
+  },
+  suggestionsList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px'
+  },
+  suggestionChip: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    padding: '10px 14px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  suggestionName: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#e4e4e4'
+  },
+  suggestionDesc: {
+    fontSize: '11px',
+    color: '#666'
+  },
+  sitesContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px'
+  },
+  siteCard: {
+    padding: '20px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255,255,255,0.08)'
+  },
+  siteCardPrimary: {
+    border: '1px solid rgba(34, 197, 94, 0.3)',
+    background: 'rgba(34, 197, 94, 0.03)'
+  },
+  siteHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '12px'
+  },
+  siteHeaderLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  siteNumber: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#e4e4e4'
+  },
+  primaryBadge: {
+    padding: '2px 8px',
+    background: 'rgba(34, 197, 94, 0.2)',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: '500',
+    color: '#22c55e'
+  },
+  siteHeaderRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  analyzedBadge: {
+    padding: '2px 8px',
+    background: 'rgba(34, 197, 94, 0.2)',
+    borderRadius: '4px',
+    fontSize: '11px',
+    color: '#22c55e'
+  },
+  removeSiteBtn: {
+    width: '24px',
+    height: '24px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '6px',
+    color: '#888',
+    cursor: 'pointer',
+    fontSize: '12px'
+  },
+  urlRow: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '12px'
+  },
+  urlInput: {
+    flex: 1,
+    padding: '12px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px',
+    color: '#e4e4e4',
+    fontSize: '14px',
+    outline: 'none'
+  },
+  analyzeBtn: {
+    padding: '12px 20px',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    border: 'none',
+    borderRadius: '8px',
+    color: '#fff',
+    fontSize: '13px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap'
+  },
+  screenshotContainer: {
+    marginBottom: '12px',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    background: 'rgba(0,0,0,0.3)',
+    maxHeight: '200px'
+  },
+  screenshot: {
+    width: '100%',
+    height: 'auto',
+    display: 'block'
+  },
+  analysisResults: {
+    marginBottom: '12px'
+  },
+  colorsRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '12px'
+  },
+  colorsLabel: {
+    fontSize: '12px',
+    color: '#888'
+  },
+  colorDot: {
+    width: '20px',
+    height: '20px',
+    borderRadius: '4px',
+    border: '2px solid rgba(255,255,255,0.2)'
+  },
+  styleLabel: {
+    marginLeft: 'auto',
+    fontSize: '12px',
+    color: '#888',
+    padding: '2px 8px',
+    background: 'rgba(255,255,255,0.05)',
+    borderRadius: '4px'
+  },
+  priorityRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '12px'
+  },
+  priorityLabel: {
+    fontSize: '13px',
+    color: '#888'
+  },
+  priorityToggle: {
+    display: 'flex',
+    gap: '8px'
+  },
+  priorityBtn: {
+    padding: '8px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '6px',
+    color: '#888',
+    fontSize: '12px',
+    cursor: 'pointer'
+  },
+  priorityBtnActive: {
+    background: 'rgba(34, 197, 94, 0.15)',
+    border: '1px solid #22c55e',
+    color: '#22c55e'
+  },
+  priorityBtnSecondary: {
+    background: 'rgba(59, 130, 246, 0.1)',
+    border: '1px solid rgba(59, 130, 246, 0.3)',
+    color: '#3b82f6'
+  },
+  elementsSection: {
+    marginBottom: '12px'
+  },
+  elementsLabel: {
+    display: 'block',
+    fontSize: '12px',
+    color: '#888',
+    marginBottom: '8px'
+  },
+  elementsGrid: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px'
+  },
+  elementChip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '6px 10px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '16px',
+    color: '#888',
+    fontSize: '11px',
+    cursor: 'pointer'
+  },
+  elementChipActive: {
+    background: 'rgba(34, 197, 94, 0.15)',
+    border: '1px solid #22c55e',
+    color: '#22c55e'
+  },
+  notesInput: {
+    width: '100%',
+    padding: '10px 14px',
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '8px',
+    color: '#e4e4e4',
+    fontSize: '13px',
+    resize: 'none',
+    outline: 'none'
+  },
+  addSiteBtn: {
+    padding: '16px',
+    background: 'transparent',
+    border: '2px dashed rgba(255,255,255,0.15)',
+    borderRadius: '12px',
+    color: '#888',
+    fontSize: '14px',
+    cursor: 'pointer'
+  },
+  footer: {
+    marginTop: '24px',
+    display: 'flex',
+    justifyContent: 'flex-end'
+  },
+  continueBtn: {
+    padding: '16px 32px',
+    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#fff',
+    fontSize: '16px',
+    fontWeight: '600',
+    cursor: 'pointer'
+  },
+  // Preview styles
+  previewContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px'
+  },
+  previewSection: {
+    padding: '20px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255,255,255,0.08)'
+  },
+  previewSectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    marginBottom: '16px'
+  },
+  previewIcon: {
+    fontSize: '20px'
+  },
+  previewTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#e4e4e4'
+  },
+  previewSource: {
+    marginLeft: 'auto',
+    fontSize: '12px',
+    color: '#666'
+  },
+  colorPalette: {
+    display: 'flex',
+    gap: '16px'
+  },
+  colorBlock: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px'
+  },
+  colorSwatch: {
+    width: '60px',
+    height: '60px',
+    borderRadius: '12px',
+    border: '2px solid rgba(255,255,255,0.1)'
+  },
+  colorLabel: {
+    fontSize: '12px',
+    fontWeight: '500',
+    color: '#e4e4e4'
+  },
+  colorValue: {
+    fontSize: '11px',
+    color: '#666',
+    fontFamily: 'monospace'
+  },
+  styleDescription: {
+    color: '#888',
+    fontSize: '14px',
+    lineHeight: '1.5'
+  },
+  elementsBreakdown: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  elementItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '10px 14px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '8px'
+  },
+  elementIcon: {
+    fontSize: '16px'
+  },
+  elementName: {
+    flex: 1,
+    fontSize: '14px',
+    color: '#e4e4e4'
+  },
+  elementFrom: {
+    fontSize: '12px',
+    color: '#666'
+  },
+  elementPrimaryTag: {
+    padding: '2px 6px',
+    background: 'rgba(34, 197, 94, 0.2)',
+    borderRadius: '4px',
+    fontSize: '10px',
+    color: '#22c55e'
+  },
+  sourcesGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+    gap: '12px'
+  },
+  sourceCard: {
+    borderRadius: '8px',
+    overflow: 'hidden',
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.05)'
+  },
+  sourceThumb: {
+    width: '100%',
+    height: '80px',
+    objectFit: 'cover'
+  },
+  sourceInfo: {
+    padding: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  sourceUrl: {
+    flex: 1,
+    fontSize: '12px',
+    color: '#e4e4e4'
+  },
+  sourcePrimary: {
+    padding: '2px 6px',
+    background: 'rgba(34, 197, 94, 0.2)',
+    borderRadius: '4px',
+    fontSize: '10px',
+    color: '#22c55e'
+  },
+  previewFooter: {
+    marginTop: '24px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  backToEditBtn: {
+    padding: '14px 24px',
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '10px',
+    color: '#888',
+    fontSize: '14px',
+    cursor: 'pointer'
+  }
+};
 
 // ============================================
 // CUSTOMIZE STEP: The WordPress-Style Editor
@@ -1719,6 +3269,109 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
             />
           </div>
 
+          {/* Location */}
+          <div style={styles.formSection}>
+            <label style={styles.formLabel}>Business Location</label>
+            <input
+              type="text"
+              value={projectData.location || ''}
+              onChange={(e) => updateProject({ location: e.target.value })}
+              placeholder="e.g., San Francisco, CA or Online Only"
+              style={styles.formInput}
+            />
+            <p style={customizeStyles.fieldHint}>Helps AI customize content for your area</p>
+          </div>
+
+          {/* Target Audience */}
+          <div style={styles.formSection}>
+            <label style={styles.formLabel}>Who are your customers?</label>
+            <div style={customizeStyles.chipGrid}>
+              {[
+                { id: 'individuals', label: 'Individuals', icon: '👤' },
+                { id: 'families', label: 'Families', icon: '👨‍👩‍👧' },
+                { id: 'small-business', label: 'Small Businesses', icon: '🏪' },
+                { id: 'enterprise', label: 'Enterprise', icon: '🏢' },
+                { id: 'startups', label: 'Startups', icon: '🚀' },
+                { id: 'professionals', label: 'Professionals', icon: '💼' },
+              ].map(audience => (
+                <button
+                  key={audience.id}
+                  style={{
+                    ...customizeStyles.chip,
+                    ...(projectData.targetAudience?.includes(audience.id) ? customizeStyles.chipActive : {})
+                  }}
+                  onClick={() => {
+                    const current = projectData.targetAudience || [];
+                    if (current.includes(audience.id)) {
+                      updateProject({ targetAudience: current.filter(a => a !== audience.id) });
+                    } else {
+                      updateProject({ targetAudience: [...current, audience.id] });
+                    }
+                  }}
+                >
+                  <span>{audience.icon}</span>
+                  <span>{audience.label}</span>
+                </button>
+              ))}
+            </div>
+            <p style={customizeStyles.fieldHint}>Select all that apply</p>
+          </div>
+
+          {/* Primary CTA */}
+          <div style={styles.formSection}>
+            <label style={styles.formLabel}>What should visitors do?</label>
+            <div style={customizeStyles.radioGrid}>
+              {[
+                { id: 'contact', label: 'Contact Us', icon: '📧' },
+                { id: 'book', label: 'Book Appointment', icon: '📅' },
+                { id: 'call', label: 'Call Now', icon: '📞' },
+                { id: 'quote', label: 'Get a Quote', icon: '💬' },
+                { id: 'buy', label: 'Buy Now', icon: '🛒' },
+                { id: 'visit', label: 'Visit Location', icon: '📍' },
+              ].map(cta => (
+                <label
+                  key={cta.id}
+                  style={{
+                    ...customizeStyles.radioLabel,
+                    ...(projectData.primaryCTA === cta.id ? customizeStyles.radioLabelActive : {})
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="primaryCTA"
+                    value={cta.id}
+                    checked={projectData.primaryCTA === cta.id}
+                    onChange={(e) => updateProject({ primaryCTA: e.target.value })}
+                    style={customizeStyles.radioInput}
+                  />
+                  <span>{cta.icon}</span>
+                  <span>{cta.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Tone Slider */}
+          <div style={styles.formSection}>
+            <label style={styles.formLabel}>Communication Style</label>
+            <div style={customizeStyles.sliderContainer}>
+              <span style={customizeStyles.sliderLabel}>Professional</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={projectData.tone || 50}
+                onChange={(e) => updateProject({ tone: parseInt(e.target.value) })}
+                style={customizeStyles.slider}
+              />
+              <span style={customizeStyles.sliderLabel}>Friendly</span>
+            </div>
+            <p style={customizeStyles.toneHint}>
+              {projectData.tone < 33 ? 'Formal, corporate language' :
+               projectData.tone > 66 ? 'Casual, conversational tone' : 'Balanced professional tone'}
+            </p>
+          </div>
+
           {/* Colors */}
           <div style={styles.formSection}>
             <label style={styles.formLabel}>Colors</label>
@@ -1777,11 +3430,35 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
             </div>
           </div>
 
-          {/* Pages */}
+          {/* Pages - Website */}
           <div style={styles.formSection}>
-            <label style={styles.formLabel}>Pages ({projectData.selectedPages.length} selected)</label>
+            <label style={styles.formLabel}>Website Pages ({projectData.selectedPages.filter(p => !pageOptions.find(po => po.id === p)?.appPage).length} selected)</label>
             <div style={styles.pageGrid}>
-              {pageOptions.map(page => (
+              {pageOptions.filter(p => !p.appPage).map(page => (
+                <button
+                  key={page.id}
+                  style={{
+                    ...styles.pageChip,
+                    ...(projectData.selectedPages.includes(page.id) ? styles.pageChipActive : {})
+                  }}
+                  onClick={() => togglePage(page.id)}
+                >
+                  <span>{page.icon}</span>
+                  <span>{page.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Pages - App/Dashboard */}
+          <div style={styles.formSection}>
+            <label style={styles.formLabel}>
+              App Pages
+              <span style={customizeStyles.optionalBadge}>Optional</span>
+            </label>
+            <p style={customizeStyles.fieldHint}>Add interactive features like dashboards and user accounts</p>
+            <div style={styles.pageGrid}>
+              {pageOptions.filter(p => p.appPage).map(page => (
                 <button
                   key={page.id}
                   style={{
@@ -1808,7 +3485,7 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
                   updateProject({
                     industryKey: e.target.value,
                     industry: ind,
-                    layoutKey: ind?.defaultLayout,
+                    layoutKey: null, // Reset layout when industry changes
                     effects: ind?.effects || []
                   });
                 }}
@@ -1819,6 +3496,87 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
                   <option key={key} value={key}>{ind.icon} {ind.name}</option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {/* Layout Selection - Industry-Specific */}
+          {projectData.industryKey && INDUSTRY_LAYOUTS[projectData.industryKey] && (
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>
+                Layout Style
+                <span style={layoutStyles.detectedBadge}>
+                  {INDUSTRY_LAYOUTS[projectData.industryKey]?.name}
+                </span>
+              </label>
+              <p style={customizeStyles.fieldHint}>Choose how your site will be structured</p>
+              <div style={layoutStyles.layoutGrid}>
+                {Object.entries(INDUSTRY_LAYOUTS[projectData.industryKey].layouts).map(([layoutKey, layout]) => (
+                  <button
+                    key={layoutKey}
+                    style={{
+                      ...layoutStyles.layoutCard,
+                      ...(projectData.layoutKey === layoutKey ? layoutStyles.layoutCardActive : {})
+                    }}
+                    onClick={() => updateProject({ layoutKey })}
+                  >
+                    <div style={layoutStyles.layoutIcon}>
+                      {layoutKey === 'trust-builder' && '🏆'}
+                      {layoutKey === 'lead-generator' && '🎯'}
+                      {layoutKey === 'corporate-clean' && '✨'}
+                      {layoutKey === 'appetizing-visual' && '📸'}
+                      {layoutKey === 'menu-focused' && '📋'}
+                      {layoutKey === 'story-driven' && '📖'}
+                      {layoutKey === 'patient-first' && '💚'}
+                      {layoutKey === 'credibility-focused' && '🎓'}
+                      {layoutKey === 'booking-optimized' && '📅'}
+                      {layoutKey === 'product-showcase' && '🛍️'}
+                      {layoutKey === 'conversion-focused' && '💰'}
+                      {layoutKey === 'brand-story' && '✨'}
+                      {layoutKey === 'trust-and-call' && '📞'}
+                      {layoutKey === 'quote-generator' && '💬'}
+                      {layoutKey === 'portfolio-showcase' && '🖼️'}
+                      {layoutKey === 'motivation-driven' && '💪'}
+                      {layoutKey === 'class-scheduler' && '🗓️'}
+                      {layoutKey === 'wellness-calm' && '🧘'}
+                      {layoutKey === 'property-search' && '🏠'}
+                      {layoutKey === 'agent-brand' && '👔'}
+                      {layoutKey === 'luxury-focused' && '💎'}
+                      {layoutKey === 'course-catalog' && '📚'}
+                      {layoutKey === 'coach-personal' && '🎤'}
+                      {layoutKey === 'results-focused' && '📈'}
+                      {layoutKey === 'portfolio-first' && '🎨'}
+                      {layoutKey === 'process-driven' && '⚙️'}
+                      {layoutKey === 'brand-bold' && '🔥'}
+                      {layoutKey === 'service-focused' && '🔧'}
+                      {layoutKey === 'inventory-showcase' && '🚗'}
+                      {layoutKey === 'premium-detail' && '✨'}
+                      {!['trust-builder', 'lead-generator', 'corporate-clean', 'appetizing-visual', 'menu-focused', 'story-driven', 'patient-first', 'credibility-focused', 'booking-optimized', 'product-showcase', 'conversion-focused', 'brand-story', 'trust-and-call', 'quote-generator', 'portfolio-showcase', 'motivation-driven', 'class-scheduler', 'wellness-calm', 'property-search', 'agent-brand', 'luxury-focused', 'course-catalog', 'coach-personal', 'results-focused', 'portfolio-first', 'process-driven', 'brand-bold', 'service-focused', 'inventory-showcase', 'premium-detail'].includes(layoutKey) && '📐'}
+                    </div>
+                    <div style={layoutStyles.layoutInfo}>
+                      <div style={layoutStyles.layoutName}>{layout.name}</div>
+                      <div style={layoutStyles.layoutDesc}>{layout.description}</div>
+                    </div>
+                    {projectData.layoutKey === layoutKey && (
+                      <div style={layoutStyles.layoutCheck}>✓</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Section Preview for Selected Layout */}
+              {projectData.layoutKey && INDUSTRY_LAYOUTS[projectData.industryKey].layouts[projectData.layoutKey] && (
+                <div style={layoutStyles.sectionPreview}>
+                  <div style={layoutStyles.sectionPreviewLabel}>Section Order:</div>
+                  <div style={layoutStyles.sectionFlow}>
+                    {INDUSTRY_LAYOUTS[projectData.industryKey].layouts[projectData.layoutKey].sectionOrder.map((section, idx) => (
+                      <span key={idx} style={layoutStyles.sectionChip}>
+                        {section.label || section.section}
+                        {!section.required && <span style={layoutStyles.optionalTag}>opt</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1901,56 +3659,349 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
   );
 }
 
+const customizeStyles = {
+  fieldHint: {
+    color: '#666',
+    fontSize: '12px',
+    marginTop: '6px',
+    marginBottom: 0
+  },
+  chipGrid: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px'
+  },
+  chip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 14px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '20px',
+    color: '#888',
+    fontSize: '13px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  chipActive: {
+    background: 'rgba(34, 197, 94, 0.15)',
+    borderColor: '#22c55e',
+    color: '#22c55e'
+  },
+  radioGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '8px'
+  },
+  radioLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 12px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px',
+    color: '#888',
+    fontSize: '13px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  radioLabelActive: {
+    background: 'rgba(34, 197, 94, 0.15)',
+    borderColor: '#22c55e',
+    color: '#22c55e'
+  },
+  radioInput: {
+    display: 'none'
+  },
+  sliderContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  slider: {
+    flex: 1,
+    height: '6px',
+    borderRadius: '3px',
+    background: 'rgba(255,255,255,0.1)',
+    appearance: 'none',
+    cursor: 'pointer'
+  },
+  sliderLabel: {
+    color: '#666',
+    fontSize: '12px',
+    minWidth: '70px'
+  },
+  toneHint: {
+    color: '#22c55e',
+    fontSize: '12px',
+    marginTop: '8px',
+    textAlign: 'center'
+  },
+  optionalBadge: {
+    marginLeft: '8px',
+    padding: '2px 8px',
+    background: 'rgba(255,255,255,0.05)',
+    borderRadius: '4px',
+    fontSize: '11px',
+    color: '#666'
+  }
+};
+
+// Layout Selection Styles
+const layoutStyles = {
+  detectedBadge: {
+    marginLeft: '10px',
+    padding: '3px 10px',
+    background: 'rgba(34, 197, 94, 0.15)',
+    borderRadius: '12px',
+    fontSize: '11px',
+    color: '#22c55e',
+    fontWeight: 'normal'
+  },
+  layoutGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    marginTop: '12px'
+  },
+  layoutCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px',
+    padding: '14px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    textAlign: 'left',
+    width: '100%',
+    position: 'relative'
+  },
+  layoutCardActive: {
+    background: 'rgba(34, 197, 94, 0.1)',
+    borderColor: '#22c55e',
+    boxShadow: '0 0 20px rgba(34, 197, 94, 0.15)'
+  },
+  layoutIcon: {
+    fontSize: '24px',
+    width: '44px',
+    height: '44px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(255,255,255,0.05)',
+    borderRadius: '10px',
+    flexShrink: 0
+  },
+  layoutInfo: {
+    flex: 1,
+    minWidth: 0
+  },
+  layoutName: {
+    color: '#fff',
+    fontSize: '14px',
+    fontWeight: '600',
+    marginBottom: '4px'
+  },
+  layoutDesc: {
+    color: '#888',
+    fontSize: '12px',
+    lineHeight: '1.4'
+  },
+  layoutCheck: {
+    width: '24px',
+    height: '24px',
+    borderRadius: '50%',
+    background: '#22c55e',
+    color: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    flexShrink: 0
+  },
+  sectionPreview: {
+    marginTop: '16px',
+    padding: '14px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '8px',
+    border: '1px solid rgba(255,255,255,0.05)'
+  },
+  sectionPreviewLabel: {
+    color: '#666',
+    fontSize: '11px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    marginBottom: '10px'
+  },
+  sectionFlow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px'
+  },
+  sectionChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '4px 10px',
+    background: 'rgba(34, 197, 94, 0.1)',
+    border: '1px solid rgba(34, 197, 94, 0.2)',
+    borderRadius: '4px',
+    color: '#22c55e',
+    fontSize: '11px',
+    textTransform: 'capitalize'
+  },
+  optionalTag: {
+    padding: '1px 4px',
+    background: 'rgba(255,255,255,0.1)',
+    borderRadius: '3px',
+    fontSize: '9px',
+    color: '#666',
+    marginLeft: '4px'
+  }
+};
+
 // ============================================
 // GENERATING STEP
 // ============================================
-function GeneratingStep({ progress, projectName, onBlinkUpdate }) {
-  const [blinkCount, setBlinkCount] = useState(0);
-  
-  // Blink counter - average human blinks every 4 seconds
+function GeneratingStep({ steps, currentStep, startTime, projectName, onCancel }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  // Update elapsed time every second
   useEffect(() => {
+    if (!startTime) return;
     const interval = setInterval(() => {
-      setBlinkCount(prev => {
-        const newCount = prev + 1;
-        if (onBlinkUpdate) onBlinkUpdate(newCount);
-        return newCount;
-      });
-    }, 4000);
+      setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
     return () => clearInterval(interval);
-  }, [onBlinkUpdate]);
-  
+  }, [startTime]);
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+  };
+
+  // Estimate: ~15 seconds per step
+  const estimatedTotal = steps.length * 15;
+  const remaining = Math.max(0, estimatedTotal - elapsed);
+  const progress = steps.length > 0 ? ((currentStep + 1) / steps.length) * 100 : 0;
+
   return (
     <div style={styles.generatingContainer}>
-      <div style={styles.blinkQuestion}>
-        👁️ How many blinks does it take to generate YOUR website?
-      </div>
-      
       <div style={styles.generatingIcon}>⚡</div>
       <h2 style={styles.generatingTitle}>Building {projectName}...</h2>
-      
+
+      {/* Step list */}
+      <div style={genStepStyles.stepList}>
+        {steps.map((step, idx) => (
+          <div
+            key={step.id}
+            style={{
+              ...genStepStyles.stepItem,
+              opacity: idx <= currentStep ? 1 : 0.4,
+              background: idx === currentStep ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+              borderLeft: idx === currentStep ? '3px solid #22c55e' : '3px solid transparent'
+            }}
+          >
+            <span style={genStepStyles.stepIcon}>
+              {idx < currentStep ? '✓' : step.icon}
+            </span>
+            <span style={{
+              ...genStepStyles.stepLabel,
+              color: idx < currentStep ? '#22c55e' : idx === currentStep ? '#fff' : '#888'
+            }}>
+              {step.label}
+            </span>
+            {idx === currentStep && (
+              <span style={genStepStyles.activeDot} />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Progress bar */}
       <div style={styles.progressBar}>
-        <div style={{...styles.progressFill, width: `${progress}%`}} />
+        <div style={{...styles.progressFill, width: `${Math.min(progress, 100)}%`}} />
       </div>
-      
-      <div style={styles.statusRow}>
-        <span style={styles.progressText}>{Math.round(progress)}%</span>
-        <span style={styles.blinkCounter}>👁️ {blinkCount} blink{blinkCount !== 1 ? 's' : ''}</span>
+
+      {/* Time display */}
+      <div style={genStepStyles.timeRow}>
+        <span style={genStepStyles.elapsed}>Elapsed: {formatTime(elapsed)}</span>
+        <span style={genStepStyles.remaining}>~{formatTime(remaining)} remaining</span>
       </div>
-      
-      <p style={styles.generatingHint}>
-        {progress < 30 && '🎨 Designing your pages...'}
-        {progress >= 30 && progress < 60 && '⚙️ Building components...'}
-        {progress >= 60 && progress < 90 && '✨ Adding finishing touches...'}
-        {progress >= 90 && '🚀 Almost there...'}
-      </p>
-      
-      <div style={styles.activeIndicator}>
-        <span style={styles.pulsingDot} />
-        <span>Generating in progress...</span>
-      </div>
+
+      {/* Cancel button */}
+      <button onClick={onCancel} style={genStepStyles.cancelBtn}>
+        Cancel
+      </button>
     </div>
   );
 }
+
+const genStepStyles = {
+  stepList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    marginBottom: '24px',
+    maxWidth: '400px',
+    width: '100%'
+  },
+  stepItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '10px 16px',
+    borderRadius: '8px',
+    transition: 'all 0.3s ease'
+  },
+  stepIcon: {
+    fontSize: '16px',
+    width: '24px',
+    textAlign: 'center'
+  },
+  stepLabel: {
+    fontSize: '14px',
+    flex: 1
+  },
+  activeDot: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    background: '#22c55e',
+    animation: 'pulse 1.5s infinite'
+  },
+  timeRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    width: '100%',
+    maxWidth: '400px',
+    marginTop: '12px',
+    fontSize: '14px'
+  },
+  elapsed: {
+    color: '#888'
+  },
+  remaining: {
+    color: '#22c55e'
+  },
+  cancelBtn: {
+    marginTop: '24px',
+    padding: '12px 32px',
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '8px',
+    color: '#888',
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  }
+};
 
 // ============================================
 // COMPLETE STEP
@@ -2081,42 +4132,56 @@ function CompleteStep({ result, projectData, onReset, blinkCount, onDeploy, depl
 // ============================================
 // DEPLOYING STEP
 // ============================================
-function DeployingStep({ status, projectName }) {
+function DeployingStep({ status, projectName, startTime, onCancel }) {
   const [dots, setDots] = useState('');
   const [elapsedTime, setElapsedTime] = useState(0);
-  
+
   useEffect(() => {
     const dotsInterval = setInterval(() => {
       setDots(prev => prev.length >= 3 ? '' : prev + '.');
     }, 500);
-    
+
+    // Use startTime prop if available, otherwise count from 0
     const timeInterval = setInterval(() => {
-      setElapsedTime(prev => prev + 1);
+      if (startTime) {
+        setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+      } else {
+        setElapsedTime(prev => prev + 1);
+      }
     }, 1000);
-    
+
     return () => {
       clearInterval(dotsInterval);
       clearInterval(timeInterval);
     };
-  }, []);
-  
+  }, [startTime]);
+
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
   };
 
+  // Calculate remaining time (estimated 90 seconds total)
+  const estimatedTotal = 90;
+  const remaining = Math.max(0, estimatedTotal - elapsedTime);
+
+  // Get current status display
+  const statusDisplay = typeof status === 'object'
+    ? `${status.icon} ${status.status}`
+    : (status || 'Initializing...');
+
   return (
     <div style={styles.deployingContainer}>
       <div style={styles.deployingIcon}>🚀</div>
       <h2 style={styles.deployingTitle}>Deploying {projectName}{dots}</h2>
       <p style={styles.deployingSubtitle}>Your site is going live on the internet</p>
-      
+
       <div style={styles.deployingStatusCard}>
         <div style={styles.deployingSpinner}></div>
-        <span style={styles.deployingStatus}>{status || 'Initializing...'}</span>
+        <span style={styles.deployingStatus}>{statusDisplay}</span>
       </div>
-      
+
       <div style={styles.deployingTimeline}>
         <div style={styles.timelineItem}>
           <span style={styles.timelineIcon}>⏱️</span>
@@ -2124,15 +4189,10 @@ function DeployingStep({ status, projectName }) {
         </div>
         <div style={styles.timelineItem}>
           <span style={styles.timelineIcon}>🎯</span>
-          <span>Typical: 60-90 seconds</span>
+          <span>~{formatTime(remaining)} remaining</span>
         </div>
       </div>
-      
-      <div style={styles.deployingWarning}>
-        <span style={styles.warningIcon}>⚠️</span>
-        <span>Please don't refresh or close this page</span>
-      </div>
-      
+
       <div style={styles.deployingSteps}>
         <p style={styles.stepsTitle}>What's happening:</p>
         <div style={styles.stepsList}>
@@ -2147,20 +4207,50 @@ function DeployingStep({ status, projectName }) {
           <span>✅ Live!</span>
         </div>
       </div>
+
+      {/* Cancel button */}
+      <button onClick={onCancel} style={deployStepStyles.cancelBtn}>
+        Cancel Deployment
+      </button>
+
+      <div style={styles.deployingWarning}>
+        <span style={styles.warningIcon}>⚠️</span>
+        <span>Cancelling may leave partial resources created</span>
+      </div>
     </div>
   );
 }
+
+const deployStepStyles = {
+  cancelBtn: {
+    marginTop: '24px',
+    padding: '12px 32px',
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '8px',
+    color: '#888',
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  }
+};
 
 // ============================================
 // DEPLOY COMPLETE STEP
 // ============================================
 function DeployCompleteStep({ result, onReset }) {
   const [copied, setCopied] = useState(null);
-  
+  const [showPassword, setShowPassword] = useState(false);
+
   const copyToClipboard = (text, label) => {
     navigator.clipboard.writeText(text);
     setCopied(label);
     setTimeout(() => setCopied(null), 2000);
+  };
+
+  const maskPassword = (pw) => {
+    if (!pw) return '';
+    return '*'.repeat(pw.length);
   };
 
   return (
@@ -2168,30 +4258,30 @@ function DeployCompleteStep({ result, onReset }) {
       <div style={styles.deployCompleteIcon}>🎉</div>
       <h1 style={styles.deployCompleteTitle}>You're Live!</h1>
       <p style={styles.deployCompleteSubtitle}>Your site is now on the internet</p>
-      
+
       {/* Main URL */}
       <div style={styles.liveUrlCard}>
         <span style={styles.liveUrlLabel}>Your Website</span>
-        <a 
-          href={result?.urls?.frontend} 
-          target="_blank" 
+        <a
+          href={result?.urls?.frontend}
+          target="_blank"
           rel="noopener noreferrer"
           style={styles.liveUrlLink}
         >
           {result?.urls?.frontend || 'https://your-site.be1st.io'}
         </a>
-        <button 
+        <button
           style={styles.visitBtn}
           onClick={() => window.open(result?.urls?.frontend, '_blank')}
         >
-          Visit Site →
+          Visit Site
         </button>
       </div>
-      
+
       {/* All URLs */}
       <div style={styles.allUrlsCard}>
         <h3 style={styles.allUrlsTitle}>All Your URLs</h3>
-        
+
         <div style={styles.urlRow}>
           <span style={styles.urlLabel}>Frontend:</span>
           <a href={result?.urls?.frontend} target="_blank" rel="noopener noreferrer" style={styles.urlValue}>
@@ -2201,7 +4291,7 @@ function DeployCompleteStep({ result, onReset }) {
             {copied === 'frontend' ? '✓' : '📋'}
           </button>
         </div>
-        
+
         <div style={styles.urlRow}>
           <span style={styles.urlLabel}>API:</span>
           <a href={result?.urls?.backend} target="_blank" rel="noopener noreferrer" style={styles.urlValue}>
@@ -2211,7 +4301,7 @@ function DeployCompleteStep({ result, onReset }) {
             {copied === 'backend' ? '✓' : '📋'}
           </button>
         </div>
-        
+
         <div style={styles.urlRow}>
           <span style={styles.urlLabel}>Admin:</span>
           <a href={result?.urls?.admin} target="_blank" rel="noopener noreferrer" style={styles.urlValue}>
@@ -2221,7 +4311,7 @@ function DeployCompleteStep({ result, onReset }) {
             {copied === 'admin' ? '✓' : '📋'}
           </button>
         </div>
-        
+
         <div style={styles.urlRow}>
           <span style={styles.urlLabel}>GitHub:</span>
           <a href={result?.urls?.github} target="_blank" rel="noopener noreferrer" style={styles.urlValue}>
@@ -2231,7 +4321,7 @@ function DeployCompleteStep({ result, onReset }) {
             {copied === 'github' ? '✓' : '📋'}
           </button>
         </div>
-        
+
         <div style={styles.urlRow}>
           <span style={styles.urlLabel}>Railway:</span>
           <a href={result?.urls?.railway} target="_blank" rel="noopener noreferrer" style={styles.urlValue}>
@@ -2242,11 +4332,11 @@ function DeployCompleteStep({ result, onReset }) {
           </button>
         </div>
       </div>
-      
+
       {/* Admin Credentials */}
       {result?.credentials && (
         <div style={styles.credentialsCard}>
-          <h3 style={styles.credentialsTitle}>🔑 Admin Login</h3>
+          <h3 style={styles.credentialsTitle}>Admin Login</h3>
           <div style={styles.credentialRow}>
             <span style={styles.credentialLabel}>Email:</span>
             <span style={styles.credentialValue}>{result.credentials.adminEmail}</span>
@@ -2256,7 +4346,16 @@ function DeployCompleteStep({ result, onReset }) {
           </div>
           <div style={styles.credentialRow}>
             <span style={styles.credentialLabel}>Password:</span>
-            <span style={styles.credentialValue}>{result.credentials.adminPassword}</span>
+            <span style={styles.credentialValue}>
+              {showPassword ? result.credentials.adminPassword : maskPassword(result.credentials.adminPassword)}
+            </span>
+            <button
+              style={deployCompleteStyles.toggleBtn}
+              onClick={() => setShowPassword(!showPassword)}
+              title={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? '🙈' : '👁️'}
+            </button>
             <button style={styles.copyBtn} onClick={() => copyToClipboard(result.credentials.adminPassword, 'password')}>
               {copied === 'password' ? '✓' : '📋'}
             </button>
@@ -2281,20 +4380,37 @@ function DeployCompleteStep({ result, onReset }) {
   );
 }
 
+const deployCompleteStyles = {
+  toggleBtn: {
+    padding: '4px 8px',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '14px',
+    opacity: 0.7,
+    transition: 'opacity 0.2s'
+  }
+};
+
 // ============================================
 // DEPLOY ERROR STEP
 // ============================================
 function DeployErrorStep({ error, onRetry, onReset }) {
+  // Handle both string errors and structured { title, message, hint } objects
+  const errorTitle = typeof error === 'object' ? error.title : 'Deployment Failed';
+  const errorMessage = typeof error === 'object' ? error.message : error;
+  const errorHint = typeof error === 'object' ? error.hint : 'This could be a temporary issue. Your project was generated successfully - you can try deploying again.';
+
   return (
     <div style={styles.errorContainer}>
       <div style={styles.errorIcon}>❌</div>
-      <h2 style={styles.errorTitle}>Deployment Failed</h2>
-      <p style={styles.errorMessage}>{error}</p>
-      <p style={styles.errorHint}>
-        This could be a temporary issue. Your project was generated successfully - you can try deploying again.
-      </p>
+      <h2 style={styles.errorTitle}>{errorTitle}</h2>
+      <p style={styles.errorMessage}>{errorMessage}</p>
+      {errorHint && (
+        <p style={errorStepStyles.hint}>{errorHint}</p>
+      )}
       <div style={styles.errorActions}>
-        <button style={styles.primaryBtn} onClick={onRetry}>🔄 Try Again</button>
+        <button style={styles.primaryBtn} onClick={onRetry}>Try Again</button>
         <button style={styles.secondaryBtn} onClick={onReset}>Start Over</button>
       </div>
     </div>
@@ -2305,11 +4421,19 @@ function DeployErrorStep({ error, onRetry, onReset }) {
 // ERROR STEP
 // ============================================
 function ErrorStep({ error, onRetry, onReset }) {
+  // Handle both string errors and structured { title, message, hint } objects
+  const errorTitle = typeof error === 'object' ? error.title : 'Something went wrong';
+  const errorMessage = typeof error === 'object' ? error.message : error;
+  const errorHint = typeof error === 'object' ? error.hint : null;
+
   return (
     <div style={styles.errorContainer}>
       <div style={styles.errorIcon}>❌</div>
-      <h2 style={styles.errorTitle}>Something went wrong</h2>
-      <p style={styles.errorMessage}>{error}</p>
+      <h2 style={styles.errorTitle}>{errorTitle}</h2>
+      <p style={styles.errorMessage}>{errorMessage}</p>
+      {errorHint && (
+        <p style={errorStepStyles.hint}>{errorHint}</p>
+      )}
       <div style={styles.errorActions}>
         <button style={styles.primaryBtn} onClick={onRetry}>Try Again</button>
         <button style={styles.secondaryBtn} onClick={onReset}>Start Over</button>
@@ -2317,6 +4441,18 @@ function ErrorStep({ error, onRetry, onReset }) {
     </div>
   );
 }
+
+const errorStepStyles = {
+  hint: {
+    color: '#888',
+    fontSize: '14px',
+    marginTop: '8px',
+    padding: '12px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    borderRadius: '8px',
+    borderLeft: '3px solid #f59e0b'
+  }
+};
 
 // ============================================
 // STYLES

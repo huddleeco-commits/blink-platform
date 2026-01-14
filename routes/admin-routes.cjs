@@ -6,7 +6,17 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { body, validationResult } = require('express-validator');
 const router = express.Router();
+
+// Validation error handler middleware
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, errors: errors.array() });
+  }
+  next();
+};
 
 // Database functions
 let db;
@@ -16,14 +26,24 @@ try {
   console.log('   DB: Database module not loaded yet');
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'blink-admin-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES = '24h';
+
+// Validate JWT_SECRET is set
+if (!JWT_SECRET) {
+  console.error('❌ CRITICAL: JWT_SECRET environment variable is required');
+  console.error('   Admin routes will not function without it.');
+}
 
 // ============================================
 // AUTH MIDDLEWARE
 // ============================================
 
 function authenticateAdmin(req, res, next) {
+  if (!JWT_SECRET) {
+    return res.status(500).json({ success: false, error: 'Server configuration error' });
+  }
+
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -44,15 +64,19 @@ function authenticateAdmin(req, res, next) {
 // AUTH ROUTES
 // ============================================
 
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
+router.post('/login',
+  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('password').isString().notEmpty().withMessage('Password is required'),
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      if (!JWT_SECRET) {
+        return res.status(500).json({ success: false, error: 'Server configuration error' });
+      }
 
-    if (!email || !password) {
-      return res.status(400).json({ success: false, error: 'Email and password required' });
-    }
+      const { email, password } = req.body;
 
-    const admin = await db.getAdminByEmail(email);
+      const admin = await db.getAdminByEmail(email);
     if (!admin) {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }

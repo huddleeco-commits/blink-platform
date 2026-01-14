@@ -231,10 +231,10 @@ async function getApiUsageStats(days = 30) {
       SUM(cost) as total_cost,
       AVG(duration_ms) as avg_duration
     FROM api_usage
-    WHERE timestamp >= NOW() - INTERVAL '${days} days'
+    WHERE timestamp >= NOW() - $1 * INTERVAL '1 day'
     GROUP BY endpoint
     ORDER BY total_cost DESC
-  `);
+  `, [days]);
   return result.rows;
 }
 
@@ -246,26 +246,38 @@ async function getApiUsageTimeline(days = 30) {
       COUNT(*) as requests,
       SUM(cost) as cost
     FROM api_usage
-    WHERE timestamp >= NOW() - INTERVAL '${days} days'
+    WHERE timestamp >= NOW() - $1 * INTERVAL '1 day'
     GROUP BY DATE_TRUNC('day', timestamp), endpoint
     ORDER BY day DESC
-  `);
+  `, [days]);
   return result.rows;
 }
 
 async function getCostBreakdown(month = null) {
-  const monthFilter = month ? `WHERE month = '${month}'` : '';
-  const result = await query(`
-    SELECT
-      category,
-      vendor,
-      SUM(amount) as total
-    FROM cost_entries
-    ${monthFilter}
-    GROUP BY category, vendor
-    ORDER BY total DESC
-  `);
-  return result.rows;
+  if (month) {
+    const result = await query(`
+      SELECT
+        category,
+        vendor,
+        SUM(amount) as total
+      FROM cost_entries
+      WHERE month = $1
+      GROUP BY category, vendor
+      ORDER BY total DESC
+    `, [month]);
+    return result.rows;
+  } else {
+    const result = await query(`
+      SELECT
+        category,
+        vendor,
+        SUM(amount) as total
+      FROM cost_entries
+      GROUP BY category, vendor
+      ORDER BY total DESC
+    `);
+    return result.rows;
+  }
 }
 
 async function getMonthlyStats(months = 12) {
@@ -285,10 +297,10 @@ async function getProjectsOverTime(days = 90) {
       COUNT(*) as count,
       COUNT(*) FILTER (WHERE status = 'deployed') as deployed
     FROM generated_projects
-    WHERE created_at >= NOW() - INTERVAL '${days} days'
+    WHERE created_at >= NOW() - $1 * INTERVAL '1 day'
     GROUP BY DATE_TRUNC('day', created_at)
     ORDER BY day
-  `);
+  `, [days]);
   return result.rows;
 }
 
@@ -299,10 +311,10 @@ async function getRevenueOverTime(months = 12) {
       SUM(plan_price) as revenue,
       COUNT(*) as new_subscribers
     FROM subscribers
-    WHERE created_at >= NOW() - INTERVAL '${months} months'
+    WHERE created_at >= NOW() - $1 * INTERVAL '1 month'
     GROUP BY DATE_TRUNC('month', created_at)
     ORDER BY month
-  `);
+  `, [months]);
   return result.rows;
 }
 
