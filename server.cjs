@@ -1967,6 +1967,21 @@ EXAMPLE:
 
 TECHNICAL RULES (MUST FOLLOW):
 1. Use inline styles ONLY: style={{ }} - NO className or Tailwind.
+
+   CRITICAL STYLE SYNTAX - FOLLOW EXACTLY:
+   ✅ CORRECT: opacity: 0.7 (number, no quotes)
+   ✅ CORRECT: fontSize: 16 (number, no quotes)
+   ✅ CORRECT: fontSize: '16px' (string WITH quotes on BOTH sides)
+   ✅ CORRECT: color: '#ffffff' (string WITH quotes on BOTH sides)
+   ✅ CORRECT: padding: '20px 40px' (string WITH quotes on BOTH sides)
+
+   ❌ WRONG: opacity: 0.7' (trailing quote with no opening quote)
+   ❌ WRONG: fontSize: 16' (trailing quote on a number)
+   ❌ WRONG: color: #ffffff (missing quotes around hex color)
+   ❌ WRONG: padding: 20px 40px (missing quotes around CSS value)
+
+   Rule: Numbers without units = no quotes. Anything with units or special chars = quotes on BOTH sides.
+
 2. Use Lucide icons: import { IconName } from 'lucide-react'.
    VALID ICONS (use ONLY these): ArrowRight, ArrowLeft, ArrowUp, ArrowDown, Check, X, Menu,
    ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Plus, Minus, Search, Filter,
@@ -2185,10 +2200,16 @@ ${existingSiteData?.pageContent?.headlines?.slice(0, 6).join(' | ') || 'Business
 
 RULES:
 - Inline styles (style={{ }}) - NO Tailwind
-- Lucide React icons - NO emojis  
+- Lucide React icons - NO emojis
 - NO header/footer - App.jsx handles those
 - <Link> from react-router-dom
 - USE their image URLs in img tags
+
+CRITICAL STYLE SYNTAX:
+✅ opacity: 0.7 (number, no quotes)
+✅ fontSize: '16px' (string with quotes BOTH sides)
+❌ NEVER: opacity: 0.7' (trailing quote without opening)
+Rule: Numbers alone = no quotes. Values with units = quotes on BOTH sides.
 
 ${getEnhancePageInstructions(pageId, existingSiteData)}
 

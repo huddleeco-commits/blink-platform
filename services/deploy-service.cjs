@@ -41,13 +41,243 @@ function sleep(ms) {
 // PRE-DEPLOYMENT SETUP
 // ============================================
 
+/**
+ * Regenerate package-lock.json for a folder
+ * Deletes existing lock file and runs npm install to create fresh one
+ * This prevents "npm ci" errors on Railway when package.json was modified
+ */
+function regeneratePackageLock(folderPath, folderName) {
+  const packageJsonPath = path.join(folderPath, 'package.json');
+  const packageLockPath = path.join(folderPath, 'package-lock.json');
+
+  // Only process if package.json exists
+  if (!fs.existsSync(packageJsonPath)) {
+    return false;
+  }
+
+  console.log(`   📦 Regenerating package-lock.json for ${folderName}...`);
+
+  try {
+    // Delete existing package-lock.json if it exists
+    if (fs.existsSync(packageLockPath)) {
+      fs.unlinkSync(packageLockPath);
+      console.log(`      🗑️ Deleted old package-lock.json`);
+    }
+
+    // Run npm install to generate fresh package-lock.json
+    // Use --package-lock-only to just update the lock file without installing node_modules
+    // This is faster and we remove node_modules anyway before push
+    execSync('npm install --package-lock-only --legacy-peer-deps', {
+      cwd: folderPath,
+      stdio: 'pipe',
+      timeout: 120000, // 2 minute timeout
+      windowsHide: true
+    });
+
+    if (fs.existsSync(packageLockPath)) {
+      console.log(`      ✅ Generated fresh package-lock.json`);
+      return true;
+    } else {
+      console.log(`      ⚠️ package-lock.json not created (npm may have failed silently)`);
+      return false;
+    }
+  } catch (error) {
+    console.log(`      ⚠️ Failed to regenerate package-lock.json: ${error.message}`);
+    // Try fallback: full npm install
+    try {
+      console.log(`      🔄 Trying full npm install as fallback...`);
+      execSync('npm install --legacy-peer-deps', {
+        cwd: folderPath,
+        stdio: 'pipe',
+        timeout: 180000, // 3 minute timeout
+        windowsHide: true
+      });
+      if (fs.existsSync(packageLockPath)) {
+        console.log(`      ✅ Generated package-lock.json via full install`);
+        return true;
+      }
+    } catch (fallbackError) {
+      console.log(`      ❌ Fallback also failed: ${fallbackError.message}`);
+    }
+    return false;
+  }
+}
+
+/**
+ * Validate JSX/JS files for syntax errors before deployment
+ * Uses esbuild to parse files - catches unterminated strings, missing brackets, etc.
+ * Returns { valid: boolean, errors: string[] }
+ */
+function validateSyntax(projectPath) {
+  console.log(`\n🔍 Validating code syntax...`);
+  const errors = [];
+
+  // Find all .jsx and .js files in frontend/src
+  const frontendSrc = path.join(projectPath, 'frontend', 'src');
+  if (!fs.existsSync(frontendSrc)) {
+    console.log(`   ⚠️ No frontend/src directory found, skipping validation`);
+    return { valid: true, errors: [] };
+  }
+
+  function findJsxFiles(dir, files = []) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory() && entry.name !== 'node_modules') {
+        findJsxFiles(fullPath, files);
+      } else if (entry.isFile() && /\.(jsx?|tsx?)$/.test(entry.name)) {
+        files.push(fullPath);
+      }
+    }
+    return files;
+  }
+
+  const files = findJsxFiles(frontendSrc);
+  console.log(`   📄 Found ${files.length} JS/JSX files to validate`);
+
+  for (const file of files) {
+    try {
+      const content = fs.readFileSync(file, 'utf8');
+      const relativePath = path.relative(projectPath, file);
+
+      // Quick regex checks for common AI-generated bugs
+      const lines = content.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const lineNum = i + 1;
+
+        // Check for unterminated string in style object (missing opening quote)
+        // Pattern: propertyName: value' (ends with quote but no opening quote for strings)
+        const unterminatedMatch = line.match(/:\s*([0-9.]+)'(?!\s*[,}])/);
+        if (unterminatedMatch) {
+          errors.push(`${relativePath}:${lineNum}: Possible unterminated string: "${line.trim()}"`);
+        }
+
+        // Check for missing comma between style properties
+        // Pattern: } property: (closing brace followed by property without comma)
+        if (line.match(/}\s+[a-zA-Z]+:/)) {
+          errors.push(`${relativePath}:${lineNum}: Possible missing comma: "${line.trim()}"`);
+        }
+
+        // Check for style value with only closing quote
+        // Pattern: : 0.7' or : 16' (number followed by single quote)
+        const badQuoteMatch = line.match(/:\s*\d+(\.\d+)?'/);
+        if (badQuoteMatch && !line.match(/:\s*['"].*['"]/) && !line.match(/:\s*`.*`/)) {
+          errors.push(`${relativePath}:${lineNum}: Invalid style value (trailing quote without opening): "${line.trim()}"`);
+        }
+      }
+
+      // Try to parse with a simple check - look for unbalanced braces/brackets
+      let braceCount = 0, bracketCount = 0, parenCount = 0;
+      let inString = false, stringChar = '';
+
+      for (let i = 0; i < content.length; i++) {
+        const char = content[i];
+        const prevChar = i > 0 ? content[i-1] : '';
+
+        // Track string state
+        if ((char === '"' || char === "'" || char === '`') && prevChar !== '\\') {
+          if (!inString) {
+            inString = true;
+            stringChar = char;
+          } else if (char === stringChar) {
+            inString = false;
+            stringChar = '';
+          }
+        }
+
+        if (!inString) {
+          if (char === '{') braceCount++;
+          else if (char === '}') braceCount--;
+          else if (char === '[') bracketCount++;
+          else if (char === ']') bracketCount--;
+          else if (char === '(') parenCount++;
+          else if (char === ')') parenCount--;
+        }
+      }
+
+      if (braceCount !== 0) {
+        errors.push(`${relativePath}: Unbalanced braces (${braceCount > 0 ? 'missing' : 'extra'} ${Math.abs(braceCount)} closing brace${Math.abs(braceCount) > 1 ? 's' : ''})`);
+      }
+      if (bracketCount !== 0) {
+        errors.push(`${relativePath}: Unbalanced brackets (${bracketCount > 0 ? 'missing' : 'extra'} ${Math.abs(bracketCount)} closing bracket${Math.abs(bracketCount) > 1 ? 's' : ''})`);
+      }
+      if (parenCount !== 0) {
+        errors.push(`${relativePath}: Unbalanced parentheses (${parenCount > 0 ? 'missing' : 'extra'} ${Math.abs(parenCount)} closing paren${Math.abs(parenCount) > 1 ? 's' : ''})`);
+      }
+
+    } catch (err) {
+      errors.push(`${file}: Failed to read file: ${err.message}`);
+    }
+  }
+
+  if (errors.length > 0) {
+    console.log(`   ❌ Found ${errors.length} syntax issue(s):`);
+    errors.forEach(err => console.log(`      • ${err}`));
+    return { valid: false, errors };
+  }
+
+  console.log(`   ✅ All files passed syntax validation`);
+  return { valid: true, errors: [] };
+}
+
+/**
+ * Run Vite build to validate code compiles
+ * This catches all syntax errors that the regex checks might miss
+ * Returns { valid: boolean, error: string | null }
+ */
+function runBuildValidation(projectPath) {
+  const frontendPath = path.join(projectPath, 'frontend');
+  if (!fs.existsSync(frontendPath)) {
+    return { valid: true, error: null };
+  }
+
+  console.log(`\n🔨 Running build validation...`);
+
+  try {
+    // Install dependencies first (needed for build)
+    console.log(`   📦 Installing dependencies...`);
+    execSync('npm install --legacy-peer-deps', {
+      cwd: frontendPath,
+      stdio: 'pipe',
+      timeout: 180000,
+      windowsHide: true
+    });
+
+    // Run build
+    console.log(`   🏗️ Building project...`);
+    execSync('npm run build', {
+      cwd: frontendPath,
+      stdio: 'pipe',
+      timeout: 300000, // 5 minute timeout for build
+      windowsHide: true
+    });
+
+    console.log(`   ✅ Build succeeded`);
+    return { valid: true, error: null };
+  } catch (err) {
+    // Extract the useful error message
+    const stderr = err.stderr?.toString() || err.message;
+
+    // Look for specific error patterns
+    const errorMatch = stderr.match(/error[:\s]+(.+?)(?:\n|$)/i) ||
+                       stderr.match(/ERROR[:\s]+(.+?)(?:\n|$)/) ||
+                       stderr.match(/([A-Za-z]+\.jsx?:\d+:\d+:.+?)(?:\n|$)/);
+
+    const errorMessage = errorMatch ? errorMatch[1].trim() : stderr.substring(0, 500);
+
+    console.log(`   ❌ Build failed: ${errorMessage}`);
+    return { valid: false, error: errorMessage };
+  }
+}
+
 function prepareProjectForDeployment(projectPath, subdomain) {
   console.log(`📋 Preparing project for deployment...`);
-  
+
   // FIX #1: Create frontend/.env.production with correct API URL
   const frontendEnvPath = path.join(projectPath, 'frontend', '.env.production');
   const frontendEnvContent = `VITE_API_URL=https://api.${subdomain}.be1st.io\n`;
-  
+
   if (fs.existsSync(path.join(projectPath, 'frontend'))) {
     fs.writeFileSync(frontendEnvPath, frontendEnvContent);
     console.log(`   ✅ Created frontend/.env.production`);
@@ -166,6 +396,16 @@ dist/
     if (fs.existsSync(nodeModulesPath)) {
       fs.rmSync(nodeModulesPath, { recursive: true, force: true });
       console.log(`   ✅ Removed ${folder}/node_modules`);
+    }
+  }
+
+  // FIX #11: Regenerate package-lock.json files to prevent "npm ci" errors on Railway
+  // This must happen AFTER all package.json modifications but BEFORE git push
+  console.log(`\n📦 Regenerating package-lock.json files...`);
+  for (const folder of ['backend', 'frontend', 'admin']) {
+    const folderPath = path.join(projectPath, folder);
+    if (fs.existsSync(folderPath)) {
+      regeneratePackageLock(folderPath, folder);
     }
   }
 
@@ -754,6 +994,21 @@ async function deployProject(projectPath, projectName, options = {}) {
 
     prepareProjectForDeployment(projectPath, subdomain);
 
+    // PRE-DEPLOY VALIDATION: Check for syntax errors before pushing
+    // Step 1: Quick regex-based syntax check
+    const syntaxResult = validateSyntax(projectPath);
+    if (!syntaxResult.valid) {
+      throw new Error(`Code validation failed:\n${syntaxResult.errors.join('\n')}`);
+    }
+
+    // Step 2: Full build validation (catches errors regex might miss)
+    const buildResult = runBuildValidation(projectPath);
+    if (!buildResult.valid) {
+      throw new Error(`Build validation failed: ${buildResult.error}`);
+    }
+
+    console.log(`\n✅ All validations passed, proceeding with deployment...\n`);
+
     const backendRepoName = `${subdomain}-backend`;
     const frontendRepoName = `${subdomain}-frontend`;
     const adminRepoName = `${subdomain}-admin`;
@@ -984,5 +1239,8 @@ module.exports = {
   addCloudflareDNS,
   prepareProjectForDeployment,
   getGitHubUsername,
-  deleteGitHubRepo
+  deleteGitHubRepo,
+  // Pre-deploy validation
+  validateSyntax,
+  runBuildValidation
 };
