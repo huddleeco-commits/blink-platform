@@ -165,6 +165,23 @@ function validateSyntax(projectPath) {
         if (badQuoteMatch && !line.match(/:\s*['"].*['"]/) && !line.match(/:\s*`.*`/)) {
           errors.push(`${relativePath}:${lineNum}: Invalid style value (trailing quote without opening): "${line.trim()}"`);
         }
+
+        // Check for CSS values without quotes that need them
+        // Pattern: padding: 20px (should be padding: '20px')
+        const cssValueNoQuotes = line.match(/:\s*\d+px(?!\s*['"`])/);
+        if (cssValueNoQuotes && line.includes('style') && !line.match(/:\s*['"`]\d+px/)) {
+          // Only flag if it looks like JSX inline style
+          if (line.includes('{{') || line.includes('style=') || line.match(/[a-zA-Z]+:\s*\d+px/)) {
+            errors.push(`${relativePath}:${lineNum}: CSS value might need quotes: "${line.trim()}"`);
+          }
+        }
+
+        // Check for hex colors without quotes
+        // Pattern: color: #ffffff (should be color: '#ffffff')
+        const hexNoQuotes = line.match(/:\s*#[0-9a-fA-F]{3,8}(?!\s*['"`])/);
+        if (hexNoQuotes && !line.match(/:\s*['"`]#/)) {
+          errors.push(`${relativePath}:${lineNum}: Hex color needs quotes: "${line.trim()}"`);
+        }
       }
 
       // Try to parse with a simple check - look for unbalanced braces/brackets
