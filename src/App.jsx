@@ -1,12 +1,13 @@
 /**
  * Module Assembler UI - WordPress-Style Simplicity
- * 
+ *
  * 3 Paths → 1 Customizer → Generate
  * So simple a 5-year-old could use it.
  */
 
 import React, { useState, useEffect } from 'react';
 import { INDUSTRY_LAYOUTS, getLayoutConfig, buildLayoutPromptContext } from '../config/industry-layouts.js';
+import { captureException, addBreadcrumb } from './lib/sentry.js';
 
 const API_BASE = 'http://localhost:3001';
 
@@ -186,8 +187,8 @@ export default function App() {
   const [pendingDevPath, setPendingDevPath] = useState(null);
   const [taglineIndex, setTaglineIndex] = useState(0);
   
-  // Flow state
-  const [step, setStep] = useState('choose-path'); // choose-path, rebuild, quick, reference, upload-assets, customize, generating, complete, deploying, deploy-complete, deploy-error, error
+  // Flow state - now with multi-step customize flow
+  const [step, setStep] = useState('choose-path'); // choose-path, rebuild, quick, reference, upload-assets, customize-style, customize-pages, customize-details, customize-review, generating, complete, deploying, deploy-complete, deploy-error, error
   
   // Deploy state
   const [deployStatus, setDeployStatus] = useState(null);
@@ -365,11 +366,95 @@ export default function App() {
   const goToUploadAssets = () => {
     setStep('upload-assets');
   };
-  
-  // Go to customizer
+
+  // Go to customizer - now starts at style step with smart defaults
   const goToCustomize = () => {
-    setStep('customize');
+    // Apply smart defaults based on industry before starting customize flow
+    applyIndustryDefaults(projectData.industryKey);
+    setStep('customize-style');
   };
+
+  // Smart defaults based on industry
+  const applyIndustryDefaults = (industryKey) => {
+    const industryDefaults = {
+      'restaurant': {
+        pages: ['home', 'about', 'menu', 'gallery', 'contact'],
+        tone: 65, // Friendly
+        primaryCTA: 'book'
+      },
+      'dental': {
+        pages: ['home', 'about', 'services', 'contact', 'booking'],
+        tone: 40, // Professional
+        primaryCTA: 'book'
+      },
+      'healthcare': {
+        pages: ['home', 'about', 'services', 'contact', 'booking'],
+        tone: 35, // Professional
+        primaryCTA: 'book'
+      },
+      'law-firm': {
+        pages: ['home', 'about', 'services', 'contact'],
+        tone: 25, // Very professional
+        primaryCTA: 'contact'
+      },
+      'fitness': {
+        pages: ['home', 'about', 'services', 'gallery', 'booking'],
+        tone: 70, // Friendly/motivational
+        primaryCTA: 'book'
+      },
+      'yoga': {
+        pages: ['home', 'about', 'services', 'booking', 'contact'],
+        tone: 75, // Calm and friendly
+        primaryCTA: 'book'
+      },
+      'spa-salon': {
+        pages: ['home', 'services', 'gallery', 'booking', 'contact'],
+        tone: 60, // Warm
+        primaryCTA: 'book'
+      },
+      'cafe': {
+        pages: ['home', 'about', 'menu', 'gallery', 'contact'],
+        tone: 70, // Casual
+        primaryCTA: 'visit'
+      },
+      'real-estate': {
+        pages: ['home', 'about', 'services', 'gallery', 'contact'],
+        tone: 45, // Professional but approachable
+        primaryCTA: 'contact'
+      },
+      'construction': {
+        pages: ['home', 'about', 'services', 'gallery', 'contact'],
+        tone: 40, // Professional
+        primaryCTA: 'quote'
+      },
+      'saas': {
+        pages: ['home', 'about', 'services', 'contact'],
+        tone: 50, // Balanced
+        primaryCTA: 'contact'
+      }
+    };
+
+    const defaults = industryDefaults[industryKey] || {
+      pages: ['home', 'about', 'services', 'contact'],
+      tone: 50,
+      primaryCTA: 'contact'
+    };
+
+    // Only apply if user hasn't already customized
+    if (projectData.selectedPages.length <= 3) {
+      updateProject({
+        selectedPages: defaults.pages,
+        tone: defaults.tone,
+        primaryCTA: defaults.primaryCTA
+      });
+    }
+  };
+
+  // Navigation helpers for multi-step customize flow
+  const goToStyleStep = () => setStep('customize-style');
+  const goToPagesStep = () => setStep('customize-pages');
+  const goToDetailsStep = () => setStep('customize-details');
+  const goToReviewStep = () => setStep('customize-review');
 
   // Generate the project with real step tracking
   const handleGenerate = async () => {
@@ -470,8 +555,22 @@ export default function App() {
     } catch (err) {
       if (err.name === 'AbortError') {
         // User cancelled - go back to customize
+        addBreadcrumb('Generation cancelled by user', 'user-action');
         setStep('customize');
       } else {
+        // Capture generation errors to Sentry
+        captureException(err, {
+          tags: {
+            feature: 'generation',
+            industry: projectData.industryKey,
+          },
+          extra: {
+            businessName: projectData.businessName,
+            pages: projectData.selectedPages,
+            step: currentGenerationStep,
+          }
+        });
+
         setError({
           title: 'Generation Failed',
           message: err.message,
@@ -564,8 +663,21 @@ export default function App() {
     } catch (err) {
       if (err.name === 'AbortError') {
         // User cancelled - go back to complete
+        addBreadcrumb('Deployment cancelled by user', 'user-action');
         setStep('complete');
       } else {
+        // Capture deployment errors to Sentry
+        captureException(err, {
+          tags: {
+            feature: 'deployment',
+            projectName: result?.name,
+          },
+          extra: {
+            projectPath: result?.path,
+            businessName: projectData.businessName,
+          }
+        });
+
         setDeployError({
           title: 'Deployment Failed',
           message: err.message,
@@ -693,6 +805,48 @@ export default function App() {
           />
         )}
         
+        {/* New multi-step customize flow */}
+        {step === 'customize-style' && (
+          <StyleStep
+            projectData={projectData}
+            updateProject={updateProject}
+            onNext={goToPagesStep}
+            onBack={() => setStep('upload-assets')}
+          />
+        )}
+
+        {step === 'customize-pages' && (
+          <PagesStep
+            projectData={projectData}
+            updateProject={updateProject}
+            onNext={goToDetailsStep}
+            onBack={goToStyleStep}
+          />
+        )}
+
+        {step === 'customize-details' && (
+          <DetailsStep
+            projectData={projectData}
+            updateProject={updateProject}
+            industries={industries}
+            onNext={goToReviewStep}
+            onBack={goToPagesStep}
+          />
+        )}
+
+        {step === 'customize-review' && (
+          <ReviewStep
+            projectData={projectData}
+            updateProject={updateProject}
+            onGenerate={handleGenerate}
+            onBack={goToDetailsStep}
+            onEditStyle={goToStyleStep}
+            onEditPages={goToPagesStep}
+            onEditDetails={goToDetailsStep}
+          />
+        )}
+
+        {/* Legacy customize step - kept for backwards compatibility */}
         {step === 'customize' && (
           <CustomizeStep
             projectData={projectData}
@@ -704,7 +858,7 @@ export default function App() {
             onBack={() => setStep(path)}
           />
         )}
-        
+
         {step === 'generating' && (
           <GeneratingStep
             steps={generationSteps}
@@ -740,7 +894,11 @@ export default function App() {
         )}
         
         {step === 'deploy-complete' && (
-          <DeployCompleteStep result={deployResult} onReset={handleReset} />
+          <DeployCompleteStep
+            result={deployResult}
+            onReset={handleReset}
+            generationTime={result?.duration ? result.duration / 1000 : null}
+          />
         )}
         
         {step === 'deploy-error' && (
@@ -3175,10 +3333,1014 @@ const inspiredStyles = {
 };
 
 // ============================================
-// CUSTOMIZE STEP: The WordPress-Style Editor
+// PROGRESS INDICATOR COMPONENT
+// ============================================
+function ProgressIndicator({ currentStep, steps }) {
+  return (
+    <div style={progressStyles.container}>
+      <div style={progressStyles.steps}>
+        {steps.map((step, index) => {
+          const isCompleted = index < currentStep;
+          const isCurrent = index === currentStep;
+          return (
+            <div key={step.id} style={progressStyles.stepWrapper}>
+              <div style={{
+                ...progressStyles.dot,
+                ...(isCompleted ? progressStyles.dotCompleted : {}),
+                ...(isCurrent ? progressStyles.dotCurrent : {})
+              }}>
+                {isCompleted ? '✓' : index + 1}
+              </div>
+              <span style={{
+                ...progressStyles.label,
+                ...(isCurrent ? progressStyles.labelCurrent : {}),
+                ...(isCompleted ? progressStyles.labelCompleted : {})
+              }}>
+                {step.label}
+              </span>
+              {index < steps.length - 1 && (
+                <div style={{
+                  ...progressStyles.connector,
+                  ...(isCompleted ? progressStyles.connectorCompleted : {})
+                }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={progressStyles.timeEstimate}>
+        ⏱️ About {60 - (currentStep * 15)} seconds left
+      </div>
+    </div>
+  );
+}
+
+const progressStyles = {
+  container: {
+    marginBottom: '32px',
+    padding: '20px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255,255,255,0.08)'
+  },
+  steps: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '12px'
+  },
+  stepWrapper: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  dot: {
+    width: '28px',
+    height: '28px',
+    borderRadius: '50%',
+    background: 'rgba(255,255,255,0.1)',
+    border: '2px solid rgba(255,255,255,0.2)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#666'
+  },
+  dotCurrent: {
+    background: 'rgba(34, 197, 94, 0.2)',
+    borderColor: '#22c55e',
+    color: '#22c55e'
+  },
+  dotCompleted: {
+    background: '#22c55e',
+    borderColor: '#22c55e',
+    color: '#fff'
+  },
+  label: {
+    fontSize: '13px',
+    color: '#666',
+    fontWeight: '500'
+  },
+  labelCurrent: {
+    color: '#22c55e'
+  },
+  labelCompleted: {
+    color: '#888'
+  },
+  connector: {
+    width: '40px',
+    height: '2px',
+    background: 'rgba(255,255,255,0.1)',
+    marginLeft: '8px'
+  },
+  connectorCompleted: {
+    background: '#22c55e'
+  },
+  timeEstimate: {
+    textAlign: 'center',
+    fontSize: '12px',
+    color: '#666'
+  }
+};
+
+// ============================================
+// STEP 1: STYLE (Colors)
+// ============================================
+function StyleStep({ projectData, updateProject, onNext, onBack }) {
+  const colorPresets = [
+    { name: 'Ocean', colors: { primary: '#0ea5e9', secondary: '#0369a1', accent: '#38bdf8' }, vibe: 'Professional & trustworthy' },
+    { name: 'Forest', colors: { primary: '#22c55e', secondary: '#15803d', accent: '#86efac' }, vibe: 'Natural & eco-friendly' },
+    { name: 'Sunset', colors: { primary: '#f97316', secondary: '#c2410c', accent: '#fdba74' }, vibe: 'Warm & energetic' },
+    { name: 'Royal', colors: { primary: '#8b5cf6', secondary: '#6d28d9', accent: '#c4b5fd' }, vibe: 'Luxurious & creative' },
+    { name: 'Crimson', colors: { primary: '#ef4444', secondary: '#b91c1c', accent: '#fca5a5' }, vibe: 'Bold & passionate' },
+    { name: 'Midnight', colors: { primary: '#1e3a5f', secondary: '#0f172a', accent: '#c9a962' }, vibe: 'Elegant & premium' },
+  ];
+
+  const selectPreset = (preset) => {
+    updateProject({
+      colorMode: 'preset',
+      selectedPreset: preset.name,
+      colors: { ...projectData.colors, ...preset.colors }
+    });
+  };
+
+  const updateCustomColor = (key, value) => {
+    updateProject({
+      colorMode: 'custom',
+      selectedPreset: null,
+      colors: { ...projectData.colors, [key]: value }
+    });
+  };
+
+  const progressSteps = [
+    { id: 'style', label: 'Style' },
+    { id: 'pages', label: 'Pages' },
+    { id: 'details', label: 'Details' },
+    { id: 'review', label: 'Review' }
+  ];
+
+  return (
+    <div style={styles.stepContainer}>
+      <button style={styles.backBtn} onClick={onBack}>← Back</button>
+
+      <ProgressIndicator currentStep={0} steps={progressSteps} />
+
+      <h1 style={newStepStyles.title}>🎨 Pick Your Colors</h1>
+      <p style={newStepStyles.subtitle}>Choose a color palette that matches your brand</p>
+
+      {/* Color Presets */}
+      <div style={newStepStyles.presetGrid}>
+        {colorPresets.map(preset => (
+          <button
+            key={preset.name}
+            style={{
+              ...newStepStyles.presetCard,
+              ...(projectData.selectedPreset === preset.name ? newStepStyles.presetCardActive : {})
+            }}
+            onClick={() => selectPreset(preset)}
+          >
+            <div style={newStepStyles.presetColors}>
+              <div style={{...newStepStyles.presetSwatch, background: preset.colors.primary}} />
+              <div style={{...newStepStyles.presetSwatch, background: preset.colors.secondary}} />
+              <div style={{...newStepStyles.presetSwatch, background: preset.colors.accent}} />
+            </div>
+            <div style={newStepStyles.presetName}>{preset.name}</div>
+            <div style={newStepStyles.presetVibe}>{preset.vibe}</div>
+            {projectData.selectedPreset === preset.name && (
+              <div style={newStepStyles.presetCheck}>✓</div>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Custom Colors */}
+      <div style={newStepStyles.customSection}>
+        <p style={newStepStyles.customLabel}>Or customize your colors:</p>
+        <div style={newStepStyles.customColors}>
+          <div style={newStepStyles.colorPicker}>
+            <label>Primary</label>
+            <input
+              type="color"
+              value={projectData.colors.primary}
+              onChange={(e) => updateCustomColor('primary', e.target.value)}
+              style={newStepStyles.colorInput}
+            />
+          </div>
+          <div style={newStepStyles.colorPicker}>
+            <label>Secondary</label>
+            <input
+              type="color"
+              value={projectData.colors.secondary}
+              onChange={(e) => updateCustomColor('secondary', e.target.value)}
+              style={newStepStyles.colorInput}
+            />
+          </div>
+          <div style={newStepStyles.colorPicker}>
+            <label>Accent</label>
+            <input
+              type="color"
+              value={projectData.colors.accent}
+              onChange={(e) => updateCustomColor('accent', e.target.value)}
+              style={newStepStyles.colorInput}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Preview */}
+      <div style={newStepStyles.miniPreview}>
+        <div style={{...newStepStyles.previewBar, background: projectData.colors.primary}}>
+          <span style={{color: '#fff', fontSize: '12px'}}>Preview</span>
+        </div>
+        <div style={newStepStyles.previewBody}>
+          <div style={{...newStepStyles.previewButton, background: projectData.colors.primary}}>
+            Primary Button
+          </div>
+          <div style={{...newStepStyles.previewButton, background: projectData.colors.accent}}>
+            Accent Button
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <div style={newStepStyles.navButtons}>
+        <button style={newStepStyles.nextBtn} onClick={onNext}>
+          Continue → Pages
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// STEP 2: PAGES (Essential 6 only)
+// ============================================
+function PagesStep({ projectData, updateProject, onNext, onBack }) {
+  // Essential 6 pages only
+  const pageOptions = [
+    { id: 'home', label: 'Home', icon: '🏠', description: 'Your main landing page', required: true },
+    { id: 'about', label: 'About', icon: '👥', description: 'Tell your story' },
+    { id: 'services', label: 'Services', icon: '⚙️', description: 'What you offer' },
+    { id: 'menu', label: 'Menu', icon: '🍽️', description: 'Food & pricing (restaurants)' },
+    { id: 'gallery', label: 'Gallery', icon: '🖼️', description: 'Showcase your work' },
+    { id: 'contact', label: 'Contact', icon: '📞', description: 'How to reach you' },
+    { id: 'booking', label: 'Booking', icon: '📅', description: 'Schedule appointments' },
+  ];
+
+  const togglePage = (pageId) => {
+    if (pageId === 'home') return; // Home is always required
+    const current = projectData.selectedPages;
+    if (current.includes(pageId)) {
+      updateProject({ selectedPages: current.filter(p => p !== pageId) });
+    } else {
+      updateProject({ selectedPages: [...current, pageId] });
+    }
+  };
+
+  const progressSteps = [
+    { id: 'style', label: 'Style' },
+    { id: 'pages', label: 'Pages' },
+    { id: 'details', label: 'Details' },
+    { id: 'review', label: 'Review' }
+  ];
+
+  return (
+    <div style={styles.stepContainer}>
+      <button style={styles.backBtn} onClick={onBack}>← Back</button>
+
+      <ProgressIndicator currentStep={1} steps={progressSteps} />
+
+      <h1 style={newStepStyles.title}>📄 What pages do you need?</h1>
+      <p style={newStepStyles.subtitle}>Select the pages for your website (we recommend 4-5)</p>
+
+      {/* Page Selection */}
+      <div style={newStepStyles.pageGrid}>
+        {pageOptions.map(page => {
+          const isSelected = projectData.selectedPages.includes(page.id);
+          return (
+            <button
+              key={page.id}
+              style={{
+                ...newStepStyles.pageCard,
+                ...(isSelected ? newStepStyles.pageCardActive : {}),
+                ...(page.required ? { cursor: 'default' } : {})
+              }}
+              onClick={() => togglePage(page.id)}
+              disabled={page.required}
+            >
+              <div style={newStepStyles.pageIcon}>{page.icon}</div>
+              <div style={newStepStyles.pageLabel}>{page.label}</div>
+              <div style={newStepStyles.pageDesc}>{page.description}</div>
+              {page.required && <div style={newStepStyles.requiredBadge}>Required</div>}
+              {isSelected && !page.required && <div style={newStepStyles.pageCheck}>✓</div>}
+            </button>
+          );
+        })}
+      </div>
+
+      <p style={newStepStyles.selectedCount}>
+        {projectData.selectedPages.length} pages selected
+      </p>
+
+      {/* Navigation */}
+      <div style={newStepStyles.navButtons}>
+        <button style={newStepStyles.nextBtn} onClick={onNext}>
+          Continue → Details
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// STEP 3: DETAILS (Name, Tagline, Tone)
+// ============================================
+function DetailsStep({ projectData, updateProject, industries, onNext, onBack }) {
+  const toneOptions = [
+    { value: 25, label: 'Professional', desc: 'Formal, corporate language', icon: '👔' },
+    { value: 50, label: 'Balanced', desc: 'Professional but approachable', icon: '🤝' },
+    { value: 75, label: 'Friendly', desc: 'Casual, conversational tone', icon: '😊' },
+  ];
+
+  const ctaOptions = [
+    { id: 'contact', label: 'Contact Us', icon: '📧' },
+    { id: 'book', label: 'Book Now', icon: '📅' },
+    { id: 'call', label: 'Call Now', icon: '📞' },
+    { id: 'quote', label: 'Get a Quote', icon: '💬' },
+  ];
+
+  const progressSteps = [
+    { id: 'style', label: 'Style' },
+    { id: 'pages', label: 'Pages' },
+    { id: 'details', label: 'Details' },
+    { id: 'review', label: 'Review' }
+  ];
+
+  return (
+    <div style={styles.stepContainer}>
+      <button style={styles.backBtn} onClick={onBack}>← Back</button>
+
+      <ProgressIndicator currentStep={2} steps={progressSteps} />
+
+      <h1 style={newStepStyles.title}>✏️ Tell us about your business</h1>
+      <p style={newStepStyles.subtitle}>This helps us create the perfect content</p>
+
+      {/* Business Name */}
+      <div style={newStepStyles.formGroup}>
+        <label style={newStepStyles.label}>Business Name *</label>
+        <input
+          type="text"
+          value={projectData.businessName}
+          onChange={(e) => updateProject({ businessName: e.target.value })}
+          placeholder="Your Business Name"
+          style={newStepStyles.input}
+          autoFocus
+        />
+      </div>
+
+      {/* Tagline */}
+      <div style={newStepStyles.formGroup}>
+        <label style={newStepStyles.label}>Tagline (optional)</label>
+        <input
+          type="text"
+          value={projectData.tagline}
+          onChange={(e) => updateProject({ tagline: e.target.value })}
+          placeholder="A short description of what you do"
+          style={newStepStyles.input}
+        />
+      </div>
+
+      {/* Location */}
+      <div style={newStepStyles.formGroup}>
+        <label style={newStepStyles.label}>Location (optional)</label>
+        <input
+          type="text"
+          value={projectData.location || ''}
+          onChange={(e) => updateProject({ location: e.target.value })}
+          placeholder="e.g., San Francisco, CA"
+          style={newStepStyles.input}
+        />
+        <p style={newStepStyles.hint}>Helps customize content for your area</p>
+      </div>
+
+      {/* Tone Selection */}
+      <div style={newStepStyles.formGroup}>
+        <label style={newStepStyles.label}>How should we talk?</label>
+        <div style={newStepStyles.toneGrid}>
+          {toneOptions.map(tone => (
+            <button
+              key={tone.value}
+              style={{
+                ...newStepStyles.toneCard,
+                ...(Math.abs(projectData.tone - tone.value) < 20 ? newStepStyles.toneCardActive : {})
+              }}
+              onClick={() => updateProject({ tone: tone.value })}
+            >
+              <div style={newStepStyles.toneIcon}>{tone.icon}</div>
+              <div style={newStepStyles.toneLabel}>{tone.label}</div>
+              <div style={newStepStyles.toneDesc}>{tone.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Main Button Action */}
+      <div style={newStepStyles.formGroup}>
+        <label style={newStepStyles.label}>Main Button Action</label>
+        <p style={newStepStyles.hint}>What should visitors do on your site?</p>
+        <div style={newStepStyles.ctaGrid}>
+          {ctaOptions.map(cta => (
+            <button
+              key={cta.id}
+              style={{
+                ...newStepStyles.ctaChip,
+                ...(projectData.primaryCTA === cta.id ? newStepStyles.ctaChipActive : {})
+              }}
+              onClick={() => updateProject({ primaryCTA: cta.id })}
+            >
+              <span>{cta.icon}</span>
+              <span>{cta.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <div style={newStepStyles.navButtons}>
+        <button
+          style={{
+            ...newStepStyles.nextBtn,
+            opacity: projectData.businessName.trim() ? 1 : 0.5
+          }}
+          onClick={onNext}
+          disabled={!projectData.businessName.trim()}
+        >
+          Continue → Review
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// STEP 4: REVIEW (Summary before generation)
+// ============================================
+function ReviewStep({ projectData, updateProject, onGenerate, onBack, onEditStyle, onEditPages, onEditDetails }) {
+  const progressSteps = [
+    { id: 'style', label: 'Style' },
+    { id: 'pages', label: 'Pages' },
+    { id: 'details', label: 'Details' },
+    { id: 'review', label: 'Review' }
+  ];
+
+  const getToneLabel = () => {
+    if (projectData.tone < 40) return 'Professional';
+    if (projectData.tone > 60) return 'Friendly';
+    return 'Balanced';
+  };
+
+  const getCtaLabel = () => {
+    const labels = {
+      'contact': 'Contact Us',
+      'book': 'Book Now',
+      'call': 'Call Now',
+      'quote': 'Get a Quote',
+      'buy': 'Buy Now',
+      'visit': 'Visit Location'
+    };
+    return labels[projectData.primaryCTA] || 'Contact Us';
+  };
+
+  return (
+    <div style={styles.stepContainer}>
+      <button style={styles.backBtn} onClick={onBack}>← Back</button>
+
+      <ProgressIndicator currentStep={3} steps={progressSteps} />
+
+      <h1 style={newStepStyles.title}>🎉 Ready to build!</h1>
+      <p style={newStepStyles.subtitle}>Review your selections before we create your website</p>
+
+      {/* Summary Cards */}
+      <div style={newStepStyles.summaryGrid}>
+        {/* Business Info */}
+        <div style={newStepStyles.summaryCard}>
+          <div style={newStepStyles.summaryHeader}>
+            <span style={newStepStyles.summaryIcon}>🏢</span>
+            <span style={newStepStyles.summaryTitle}>Business</span>
+            <button style={newStepStyles.editBtn} onClick={onEditDetails}>Edit</button>
+          </div>
+          <div style={newStepStyles.summaryContent}>
+            <div style={newStepStyles.summaryItem}>
+              <strong>{projectData.businessName || 'Not set'}</strong>
+            </div>
+            {projectData.tagline && (
+              <div style={newStepStyles.summaryItemSmall}>{projectData.tagline}</div>
+            )}
+            {projectData.location && (
+              <div style={newStepStyles.summaryItemSmall}>📍 {projectData.location}</div>
+            )}
+          </div>
+        </div>
+
+        {/* Colors */}
+        <div style={newStepStyles.summaryCard}>
+          <div style={newStepStyles.summaryHeader}>
+            <span style={newStepStyles.summaryIcon}>🎨</span>
+            <span style={newStepStyles.summaryTitle}>Style</span>
+            <button style={newStepStyles.editBtn} onClick={onEditStyle}>Edit</button>
+          </div>
+          <div style={newStepStyles.summaryContent}>
+            <div style={newStepStyles.colorRow}>
+              <div style={{...newStepStyles.colorDot, background: projectData.colors.primary}} />
+              <div style={{...newStepStyles.colorDot, background: projectData.colors.secondary}} />
+              <div style={{...newStepStyles.colorDot, background: projectData.colors.accent}} />
+              <span style={newStepStyles.presetLabel}>
+                {projectData.selectedPreset || 'Custom'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Pages */}
+        <div style={newStepStyles.summaryCard}>
+          <div style={newStepStyles.summaryHeader}>
+            <span style={newStepStyles.summaryIcon}>📄</span>
+            <span style={newStepStyles.summaryTitle}>Pages ({projectData.selectedPages.length})</span>
+            <button style={newStepStyles.editBtn} onClick={onEditPages}>Edit</button>
+          </div>
+          <div style={newStepStyles.summaryContent}>
+            <div style={newStepStyles.pageChips}>
+              {projectData.selectedPages.map(page => (
+                <span key={page} style={newStepStyles.pageChip}>
+                  {page.charAt(0).toUpperCase() + page.slice(1)}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Settings */}
+        <div style={newStepStyles.summaryCard}>
+          <div style={newStepStyles.summaryHeader}>
+            <span style={newStepStyles.summaryIcon}>⚙️</span>
+            <span style={newStepStyles.summaryTitle}>Settings</span>
+            <button style={newStepStyles.editBtn} onClick={onEditDetails}>Edit</button>
+          </div>
+          <div style={newStepStyles.summaryContent}>
+            <div style={newStepStyles.settingRow}>
+              <span>Tone:</span>
+              <span style={newStepStyles.settingValue}>{getToneLabel()}</span>
+            </div>
+            <div style={newStepStyles.settingRow}>
+              <span>Main Action:</span>
+              <span style={newStepStyles.settingValue}>{getCtaLabel()}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* What you'll get */}
+      <div style={newStepStyles.whatYouGet}>
+        <h3 style={newStepStyles.whatYouGetTitle}>✨ You'll get:</h3>
+        <ul style={newStepStyles.whatYouGetList}>
+          <li>{projectData.selectedPages.length} complete web pages</li>
+          <li>Mobile-friendly design</li>
+          <li>Contact form that works</li>
+          <li>Ready to publish</li>
+        </ul>
+        <p style={newStepStyles.timeEstimate}>⏱️ Takes about 60 seconds</p>
+      </div>
+
+      {/* Generate Button */}
+      <div style={newStepStyles.generateSection}>
+        <button style={newStepStyles.generateBtn} onClick={onGenerate}>
+          🚀 Build My Website
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Styles for new step components
+const newStepStyles = {
+  title: {
+    fontSize: '32px',
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: '8px',
+    color: '#fff'
+  },
+  subtitle: {
+    fontSize: '16px',
+    color: '#888',
+    textAlign: 'center',
+    marginBottom: '32px'
+  },
+  presetGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '16px',
+    marginBottom: '24px'
+  },
+  presetCard: {
+    position: 'relative',
+    padding: '20px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '2px solid rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    textAlign: 'center'
+  },
+  presetCardActive: {
+    borderColor: '#22c55e',
+    background: 'rgba(34, 197, 94, 0.1)'
+  },
+  presetColors: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: '8px',
+    marginBottom: '12px'
+  },
+  presetSwatch: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '8px',
+    border: '2px solid rgba(255,255,255,0.2)'
+  },
+  presetName: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: '4px'
+  },
+  presetVibe: {
+    fontSize: '12px',
+    color: '#888'
+  },
+  presetCheck: {
+    position: 'absolute',
+    top: '8px',
+    right: '8px',
+    width: '24px',
+    height: '24px',
+    background: '#22c55e',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#fff',
+    fontSize: '14px',
+    fontWeight: '700'
+  },
+  customSection: {
+    padding: '20px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '12px',
+    marginBottom: '24px'
+  },
+  customLabel: {
+    color: '#888',
+    fontSize: '14px',
+    marginBottom: '16px',
+    textAlign: 'center'
+  },
+  customColors: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: '24px'
+  },
+  colorPicker: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  colorInput: {
+    width: '60px',
+    height: '60px',
+    border: 'none',
+    borderRadius: '12px',
+    cursor: 'pointer'
+  },
+  miniPreview: {
+    background: '#fff',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    marginBottom: '24px'
+  },
+  previewBar: {
+    padding: '12px 16px'
+  },
+  previewBody: {
+    padding: '20px',
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'center'
+  },
+  previewButton: {
+    padding: '10px 20px',
+    borderRadius: '8px',
+    color: '#fff',
+    fontSize: '13px',
+    fontWeight: '500'
+  },
+  navButtons: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    marginTop: '24px'
+  },
+  nextBtn: {
+    padding: '16px 32px',
+    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#fff',
+    fontSize: '16px',
+    fontWeight: '600',
+    cursor: 'pointer'
+  },
+  pageGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '12px',
+    marginBottom: '16px'
+  },
+  pageCard: {
+    position: 'relative',
+    padding: '20px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '2px solid rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    textAlign: 'center'
+  },
+  pageCardActive: {
+    borderColor: '#22c55e',
+    background: 'rgba(34, 197, 94, 0.1)'
+  },
+  pageIcon: {
+    fontSize: '28px',
+    marginBottom: '8px'
+  },
+  pageLabel: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: '4px'
+  },
+  pageDesc: {
+    fontSize: '11px',
+    color: '#888'
+  },
+  requiredBadge: {
+    position: 'absolute',
+    top: '8px',
+    right: '8px',
+    background: 'rgba(255,255,255,0.1)',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    fontSize: '10px',
+    color: '#888'
+  },
+  pageCheck: {
+    position: 'absolute',
+    top: '8px',
+    right: '8px',
+    width: '20px',
+    height: '20px',
+    background: '#22c55e',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#fff',
+    fontSize: '12px'
+  },
+  selectedCount: {
+    textAlign: 'center',
+    color: '#888',
+    fontSize: '14px',
+    marginBottom: '24px'
+  },
+  formGroup: {
+    marginBottom: '24px'
+  },
+  label: {
+    display: 'block',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#e4e4e4',
+    marginBottom: '8px'
+  },
+  input: {
+    width: '100%',
+    padding: '16px 20px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    color: '#fff',
+    fontSize: '16px',
+    outline: 'none'
+  },
+  hint: {
+    color: '#666',
+    fontSize: '12px',
+    marginTop: '6px'
+  },
+  toneGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '12px'
+  },
+  toneCard: {
+    padding: '20px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '2px solid rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    textAlign: 'center',
+    transition: 'all 0.2s'
+  },
+  toneCardActive: {
+    borderColor: '#22c55e',
+    background: 'rgba(34, 197, 94, 0.1)'
+  },
+  toneIcon: {
+    fontSize: '32px',
+    marginBottom: '8px'
+  },
+  toneLabel: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: '4px'
+  },
+  toneDesc: {
+    fontSize: '11px',
+    color: '#888'
+  },
+  ctaGrid: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginTop: '8px'
+  },
+  ctaChip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '10px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '20px',
+    color: '#888',
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  ctaChipActive: {
+    background: 'rgba(34, 197, 94, 0.15)',
+    borderColor: '#22c55e',
+    color: '#22c55e'
+  },
+  summaryGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '16px',
+    marginBottom: '24px'
+  },
+  summaryCard: {
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    overflow: 'hidden'
+  },
+  summaryHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '12px 16px',
+    background: 'rgba(255,255,255,0.02)',
+    borderBottom: '1px solid rgba(255,255,255,0.05)'
+  },
+  summaryIcon: {
+    fontSize: '18px'
+  },
+  summaryTitle: {
+    flex: 1,
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#e4e4e4'
+  },
+  editBtn: {
+    padding: '4px 12px',
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '6px',
+    color: '#888',
+    fontSize: '12px',
+    cursor: 'pointer'
+  },
+  summaryContent: {
+    padding: '16px'
+  },
+  summaryItem: {
+    color: '#fff',
+    fontSize: '16px'
+  },
+  summaryItemSmall: {
+    color: '#888',
+    fontSize: '13px',
+    marginTop: '4px'
+  },
+  colorRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  colorDot: {
+    width: '24px',
+    height: '24px',
+    borderRadius: '6px',
+    border: '2px solid rgba(255,255,255,0.2)'
+  },
+  presetLabel: {
+    marginLeft: '8px',
+    color: '#888',
+    fontSize: '13px'
+  },
+  pageChips: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px'
+  },
+  pageChip: {
+    padding: '4px 10px',
+    background: 'rgba(34, 197, 94, 0.1)',
+    borderRadius: '6px',
+    fontSize: '12px',
+    color: '#22c55e'
+  },
+  settingRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginBottom: '8px',
+    fontSize: '13px',
+    color: '#888'
+  },
+  settingValue: {
+    color: '#e4e4e4'
+  },
+  whatYouGet: {
+    background: 'rgba(34, 197, 94, 0.05)',
+    border: '1px solid rgba(34, 197, 94, 0.2)',
+    borderRadius: '12px',
+    padding: '20px',
+    marginBottom: '24px'
+  },
+  whatYouGetTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#22c55e',
+    marginBottom: '12px'
+  },
+  whatYouGetList: {
+    margin: '0',
+    paddingLeft: '20px',
+    color: '#e4e4e4',
+    fontSize: '14px',
+    lineHeight: '1.8'
+  },
+  timeEstimate: {
+    marginTop: '12px',
+    color: '#888',
+    fontSize: '13px'
+  },
+  generateSection: {
+    textAlign: 'center'
+  },
+  generateBtn: {
+    padding: '18px 48px',
+    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#fff',
+    fontSize: '18px',
+    fontWeight: '700',
+    cursor: 'pointer',
+    boxShadow: '0 4px 20px rgba(34, 197, 94, 0.3)'
+  }
+};
+
+// ============================================
+// CUSTOMIZE STEP: The WordPress-Style Editor (Legacy)
 // ============================================
 function CustomizeStep({ projectData, updateProject, industries, layouts, effects, onGenerate, onBack }) {
-  
+
   // Color presets
   const colorPresets = [
     { name: 'Ocean', colors: { primary: '#0ea5e9', secondary: '#0369a1', accent: '#38bdf8' } },
@@ -3869,32 +5031,52 @@ const layoutStyles = {
 // GENERATING STEP
 // ============================================
 function GeneratingStep({ steps, currentStep, startTime, projectName, onCancel }) {
-  const [elapsed, setElapsed] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
 
-  // Update elapsed time every second
+  // Update elapsed time every 100ms for smooth blink counter
   useEffect(() => {
     if (!startTime) return;
     const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
+      setElapsedMs(Date.now() - startTime);
+    }, 100);
     return () => clearInterval(interval);
   }, [startTime]);
 
+  const elapsedSeconds = elapsedMs / 1000;
+  const blinkCount = Math.floor(elapsedSeconds / 4.5);
+
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+    const secs = (seconds % 60).toFixed(1);
+    return mins > 0 ? `${mins}m ${Math.floor(seconds % 60)}s` : `${secs}s`;
   };
 
   // Estimate: ~15 seconds per step
   const estimatedTotal = steps.length * 15;
-  const remaining = Math.max(0, estimatedTotal - elapsed);
+  const remaining = Math.max(0, estimatedTotal - elapsedSeconds);
   const progress = steps.length > 0 ? ((currentStep + 1) / steps.length) * 100 : 0;
 
   return (
     <div style={styles.generatingContainer}>
       <div style={styles.generatingIcon}>⚡</div>
-      <h2 style={styles.generatingTitle}>Building {projectName}...</h2>
+      <h2 style={styles.generatingTitle}>Generating your site...</h2>
+
+      {/* Live Blink Counter Card */}
+      <div style={genStepStyles.blinkCard}>
+        <div style={genStepStyles.blinkRow}>
+          <div style={genStepStyles.blinkStat}>
+            <span style={genStepStyles.blinkIcon}>⏱️</span>
+            <span style={genStepStyles.blinkValue}>{formatTime(elapsedSeconds)}</span>
+            <span style={genStepStyles.blinkLabel}>elapsed</span>
+          </div>
+          <div style={genStepStyles.blinkDivider} />
+          <div style={genStepStyles.blinkStat}>
+            <span style={genStepStyles.blinkIcon}>👁️</span>
+            <span style={genStepStyles.blinkValue}>{blinkCount}</span>
+            <span style={genStepStyles.blinkLabel}>{blinkCount === 1 ? 'blink' : 'blinks'}</span>
+          </div>
+        </div>
+      </div>
 
       {/* Step list */}
       <div style={genStepStyles.stepList}>
@@ -3931,7 +5113,7 @@ function GeneratingStep({ steps, currentStep, startTime, projectName, onCancel }
 
       {/* Time display */}
       <div style={genStepStyles.timeRow}>
-        <span style={genStepStyles.elapsed}>Elapsed: {formatTime(elapsed)}</span>
+        <span style={genStepStyles.elapsed}>Building {projectName}...</span>
         <span style={genStepStyles.remaining}>~{formatTime(remaining)} remaining</span>
       </div>
 
@@ -3944,6 +5126,47 @@ function GeneratingStep({ steps, currentStep, startTime, projectName, onCancel }
 }
 
 const genStepStyles = {
+  blinkCard: {
+    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(34, 197, 94, 0.15) 100%)',
+    border: '1px solid rgba(99, 102, 241, 0.3)',
+    borderRadius: '16px',
+    padding: '20px 32px',
+    marginBottom: '24px',
+    maxWidth: '320px',
+    width: '100%'
+  },
+  blinkRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '24px'
+  },
+  blinkStat: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px'
+  },
+  blinkIcon: {
+    fontSize: '24px'
+  },
+  blinkValue: {
+    fontSize: '32px',
+    fontWeight: '700',
+    color: '#fff',
+    fontVariantNumeric: 'tabular-nums'
+  },
+  blinkLabel: {
+    fontSize: '12px',
+    color: '#888',
+    textTransform: 'uppercase',
+    letterSpacing: '1px'
+  },
+  blinkDivider: {
+    width: '1px',
+    height: '60px',
+    background: 'rgba(255,255,255,0.2)'
+  },
   stepList: {
     display: 'flex',
     flexDirection: 'column',
@@ -4007,10 +5230,12 @@ const genStepStyles = {
 // COMPLETE STEP
 // ============================================
 function CompleteStep({ result, projectData, onReset, blinkCount, onDeploy, deployReady }) {
-  const blinkMessage = blinkCount <= 1 
-    ? "Less than a blink! ⚡" 
-    : `Only ${blinkCount} blinks! 👁️`;
-    
+  const blinkMessage = blinkCount <= 1
+    ? "Generated in less than a blink!"
+    : `Your site generated in just ${blinkCount} blinks!`;
+
+  const elapsedSeconds = Math.round((blinkCount || 1) * 4.5);
+
   const handleOpenFolder = async () => {
     try {
       await fetch(`${API_BASE}/api/open-folder`, {
@@ -4042,8 +5267,9 @@ function CompleteStep({ result, projectData, onReset, blinkCount, onDeploy, depl
       <p style={styles.completeSubtitle}>Your website + admin dashboard have been generated</p>
       
       <div style={styles.blinkResult}>
+        <span style={styles.blinkEmoji}>👁️</span>
         {blinkMessage}
-        <span style={styles.blinkSubtext}>That's roughly {((blinkCount || 1) * 4)} seconds</span>
+        <span style={styles.blinkSubtext}>~{elapsedSeconds} seconds total</span>
       </div>
       
       <div style={styles.resultCard}>
@@ -4236,11 +5462,96 @@ const deployStepStyles = {
 };
 
 // ============================================
-// DEPLOY COMPLETE STEP
+// DEPLOY COMPLETE STEP - WITH RAILWAY POLLING
 // ============================================
-function DeployCompleteStep({ result, onReset }) {
+function DeployCompleteStep({ result, onReset, generationTime }) {
   const [copied, setCopied] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [deploymentStatus, setDeploymentStatus] = useState('polling'); // polling, success, failed
+  const [services, setServices] = useState({});
+  const [pollCount, setPollCount] = useState(0);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [blinkCount, setBlinkCount] = useState(0);
+  const [animatingBlinks, setAnimatingBlinks] = useState(false);
+
+  // Calculate blinks (humans blink every ~4.5 seconds)
+  const totalBlinks = generationTime ? Math.round(generationTime / 4.5) : 0;
+
+  // Animate blink counter on success
+  useEffect(() => {
+    if (deploymentStatus === 'success' && totalBlinks > 0 && !animatingBlinks) {
+      setAnimatingBlinks(true);
+      let current = 0;
+      const increment = Math.max(1, Math.floor(totalBlinks / 30)); // 30 steps
+      const interval = setInterval(() => {
+        current += increment;
+        if (current >= totalBlinks) {
+          setBlinkCount(totalBlinks);
+          clearInterval(interval);
+        } else {
+          setBlinkCount(current);
+        }
+      }, 50);
+      return () => clearInterval(interval);
+    }
+  }, [deploymentStatus, totalBlinks, animatingBlinks]);
+
+  // Poll Railway for actual deployment status
+  useEffect(() => {
+    if (!result?.railwayProjectId) {
+      // No project ID - assume success (legacy behavior)
+      setDeploymentStatus('success');
+      setShowConfetti(true);
+      return;
+    }
+
+    const pollStatus = async () => {
+      try {
+        const response = await fetch(`/api/deploy/railway-status/${result.railwayProjectId}`);
+        const data = await response.json();
+
+        if (data.success) {
+          setServices(data.services || {});
+
+          if (data.allDeployed) {
+            setDeploymentStatus('success');
+            setShowConfetti(true);
+          } else if (data.hasFailure) {
+            setDeploymentStatus('failed');
+          } else {
+            // Still building - continue polling
+            setPollCount(prev => prev + 1);
+          }
+        }
+      } catch (err) {
+        console.warn('Status poll failed:', err);
+        setPollCount(prev => prev + 1);
+      }
+    };
+
+    // Initial poll
+    pollStatus();
+
+    // Poll every 5 seconds while still deploying
+    const interval = setInterval(() => {
+      if (deploymentStatus === 'polling') {
+        pollStatus();
+      }
+    }, 5000);
+
+    // Timeout after 5 minutes - assume success
+    const timeout = setTimeout(() => {
+      if (deploymentStatus === 'polling') {
+        setDeploymentStatus('success');
+        setShowConfetti(true);
+      }
+    }, 300000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [result?.railwayProjectId, deploymentStatus]);
 
   const copyToClipboard = (text, label) => {
     navigator.clipboard.writeText(text);
@@ -4253,11 +5564,207 @@ function DeployCompleteStep({ result, onReset }) {
     return '*'.repeat(pw.length);
   };
 
+  // Service status indicator
+  const ServiceStatus = ({ name, service }) => {
+    const isDeployed = service?.isDeployed;
+    const isBuilding = service?.isBuilding;
+    const isFailed = service?.isFailed;
+
+    const icons = {
+      postgres: '🗄️',
+      backend: '⚙️',
+      frontend: '🌐',
+      admin: '👤'
+    };
+
+    const labels = {
+      postgres: 'Database',
+      backend: 'Backend API',
+      frontend: 'Frontend',
+      admin: 'Admin Panel'
+    };
+
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '12px 16px',
+        background: isDeployed ? 'rgba(34, 197, 94, 0.1)' : isFailed ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+        borderRadius: '8px',
+        border: `1px solid ${isDeployed ? 'rgba(34, 197, 94, 0.3)' : isFailed ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`
+      }}>
+        <span style={{ fontSize: '20px' }}>{icons[name] || '📦'}</span>
+        <span style={{ flex: 1, color: '#e5e7eb', fontSize: '14px' }}>{labels[name] || name}</span>
+        {isDeployed && <span style={{ color: '#22c55e', fontSize: '18px' }}>✓</span>}
+        {isBuilding && <span style={{
+          width: '16px',
+          height: '16px',
+          border: '2px solid #3b82f6',
+          borderTopColor: 'transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></span>}
+        {isFailed && <span style={{ color: '#ef4444', fontSize: '18px' }}>✗</span>}
+      </div>
+    );
+  };
+
+  // Still polling - show deployment progress
+  if (deploymentStatus === 'polling') {
+    return (
+      <div style={styles.deployCompleteContainer}>
+        <div style={styles.deployCompleteIcon}>🚀</div>
+        <h1 style={styles.deployCompleteTitle}>Deployment Started!</h1>
+        <p style={styles.deployCompleteSubtitle}>Building your services on Railway...</p>
+
+        {/* Service Status Grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '12px',
+          width: '100%',
+          maxWidth: '500px',
+          margin: '24px auto'
+        }}>
+          <ServiceStatus name="postgres" service={services.postgres} />
+          <ServiceStatus name="backend" service={services.backend} />
+          <ServiceStatus name="frontend" service={services.frontend} />
+          <ServiceStatus name="admin" service={services.admin} />
+        </div>
+
+        <p style={{ color: '#9ca3af', fontSize: '14px', marginTop: '16px' }}>
+          ⏱️ Checking status... ({pollCount * 5}s elapsed)
+        </p>
+
+        <p style={{ color: '#6b7280', fontSize: '13px', marginTop: '8px' }}>
+          This usually takes 2-3 minutes. Your site will be ready soon!
+        </p>
+      </div>
+    );
+  }
+
+  // Deployment failed
+  if (deploymentStatus === 'failed') {
+    return (
+      <div style={styles.deployCompleteContainer}>
+        <div style={styles.deployCompleteIcon}>⚠️</div>
+        <h1 style={styles.deployCompleteTitle}>Deployment Issue</h1>
+        <p style={styles.deployCompleteSubtitle}>One or more services failed to deploy</p>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '12px',
+          width: '100%',
+          maxWidth: '500px',
+          margin: '24px auto'
+        }}>
+          <ServiceStatus name="postgres" service={services.postgres} />
+          <ServiceStatus name="backend" service={services.backend} />
+          <ServiceStatus name="frontend" service={services.frontend} />
+          <ServiceStatus name="admin" service={services.admin} />
+        </div>
+
+        <p style={{ color: '#9ca3af', fontSize: '14px', marginTop: '16px' }}>
+          Check the Railway dashboard for details:
+        </p>
+        <a
+          href={result?.urls?.railway}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: '#3b82f6', marginTop: '8px', display: 'inline-block' }}
+        >
+          Open Railway Dashboard →
+        </a>
+
+        <button style={{ ...styles.secondaryBtn, marginTop: '24px' }} onClick={onReset}>
+          Start Over
+        </button>
+      </div>
+    );
+  }
+
+  // Success! Show the full success page
   return (
     <div style={styles.deployCompleteContainer}>
+      {/* Confetti effect */}
+      {showConfetti && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          pointerEvents: 'none',
+          zIndex: 1000,
+          overflow: 'hidden'
+        }}>
+          {[...Array(50)].map((_, i) => (
+            <div
+              key={i}
+              style={{
+                position: 'absolute',
+                left: `${Math.random() * 100}%`,
+                top: '-10px',
+                width: '10px',
+                height: '10px',
+                background: ['#22c55e', '#3b82f6', '#eab308', '#ef4444', '#8b5cf6'][Math.floor(Math.random() * 5)],
+                borderRadius: Math.random() > 0.5 ? '50%' : '0',
+                animation: `confetti-fall ${2 + Math.random() * 2}s linear forwards`,
+                animationDelay: `${Math.random() * 2}s`
+              }}
+            />
+          ))}
+        </div>
+      )}
+
       <div style={styles.deployCompleteIcon}>🎉</div>
       <h1 style={styles.deployCompleteTitle}>You're Live!</h1>
       <p style={styles.deployCompleteSubtitle}>Your site is now on the internet</p>
+
+      {/* Blinks Stats Card */}
+      {totalBlinks > 0 && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%)',
+          border: '1px solid rgba(34, 197, 94, 0.3)',
+          borderRadius: '16px',
+          padding: '24px 32px',
+          margin: '24px auto',
+          maxWidth: '400px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e', marginBottom: '12px', letterSpacing: '1px' }}>
+            ⚡ GENERATION STATS
+          </div>
+          <div style={{ fontSize: '14px', color: '#9ca3af', marginBottom: '8px' }}>
+            Total Time: {generationTime?.toFixed(1)} seconds
+          </div>
+          <div style={{
+            fontSize: '32px',
+            fontWeight: '700',
+            color: '#ffffff',
+            marginBottom: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px'
+          }}>
+            <span style={{ fontSize: '28px' }}>👁️</span>
+            That's only {blinkCount} blinks!
+          </div>
+          <div style={{
+            fontSize: '14px',
+            color: '#9ca3af',
+            fontStyle: 'italic',
+            marginTop: '12px',
+            lineHeight: '1.5'
+          }}>
+            "Traditional dev: 4-6 weeks"<br />
+            "Your site: <span style={{ color: '#22c55e', fontWeight: '600' }}>{totalBlinks} blinks</span>"
+          </div>
+        </div>
+      )}
 
       {/* Main URL */}
       <div style={styles.liveUrlCard}>
@@ -5696,6 +7203,10 @@ const styles = {
     fontWeight: '400',
     color: '#888',
   },
+  blinkEmoji: {
+    fontSize: '32px',
+    marginBottom: '8px',
+  },
   completeTitle: {
     fontSize: '32px',
     fontWeight: '700',
@@ -6105,7 +7616,18 @@ styleSheet.textContent = `
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-10px); }
   }
-  
+
+  @keyframes confetti-fall {
+    0% {
+      transform: translateY(0) rotate(0deg);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100vh) rotate(720deg);
+      opacity: 0;
+    }
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
   
   body {
