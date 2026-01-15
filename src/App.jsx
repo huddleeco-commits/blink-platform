@@ -3175,10 +3175,459 @@ const inspiredStyles = {
 };
 
 // ============================================
+// P1 VISUAL COMPONENTS: Better Organization
+// ============================================
+
+// Wizard Progress Breadcrumb - Shows flow progress and allows jumping back
+function WizardBreadcrumb({ currentPath, completedSteps, onJumpTo }) {
+  const allSteps = [
+    { id: 'choose-path', label: 'Start', icon: '🚀' },
+    { id: 'path', label: currentPath === 'rebuild' ? 'Rebuild' : currentPath === 'quick' ? 'Quick Start' : 'Reference', icon: currentPath === 'rebuild' ? '🔄' : currentPath === 'quick' ? '⚡' : '🎨' },
+    { id: 'upload-assets', label: 'Assets', icon: '📁' },
+    { id: 'customize', label: 'Customize', icon: '✨' },
+    { id: 'generate', label: 'Generate', icon: '🎯' }
+  ];
+
+  return (
+    <div style={wizardStyles.breadcrumbContainer}>
+      <div style={wizardStyles.breadcrumbTrack}>
+        {allSteps.map((step, index) => {
+          const isCompleted = completedSteps.includes(step.id);
+          const isCurrent = step.id === 'customize';
+          const isClickable = isCompleted && step.id !== 'customize';
+
+          return (
+            <div key={step.id} style={wizardStyles.breadcrumbStep}>
+              <button
+                style={{
+                  ...wizardStyles.breadcrumbDot,
+                  ...(isCompleted ? wizardStyles.breadcrumbDotCompleted : {}),
+                  ...(isCurrent ? wizardStyles.breadcrumbDotCurrent : {}),
+                  cursor: isClickable ? 'pointer' : 'default'
+                }}
+                onClick={() => isClickable && onJumpTo(step.id)}
+                disabled={!isClickable}
+                title={isClickable ? `Go back to ${step.label}` : step.label}
+              >
+                {isCompleted ? '✓' : step.icon}
+              </button>
+              <span style={{
+                ...wizardStyles.breadcrumbLabel,
+                ...(isCurrent ? wizardStyles.breadcrumbLabelCurrent : {}),
+                ...(isCompleted ? wizardStyles.breadcrumbLabelCompleted : {})
+              }}>
+                {step.label}
+              </span>
+              {index < allSteps.length - 1 && (
+                <div style={{
+                  ...wizardStyles.breadcrumbConnector,
+                  ...(isCompleted ? wizardStyles.breadcrumbConnectorCompleted : {})
+                }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Collapsible Section - Reduces visual overwhelm
+function CollapsibleSection({ title, icon, children, defaultOpen = true, badge, tooltip }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <div style={collapsibleStyles.container}>
+      <button
+        style={collapsibleStyles.header}
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <div style={collapsibleStyles.headerLeft}>
+          <span style={collapsibleStyles.icon}>{icon}</span>
+          <span style={collapsibleStyles.title}>{title}</span>
+          {badge && <span style={collapsibleStyles.badge}>{badge}</span>}
+          {tooltip && (
+            <span style={collapsibleStyles.tooltipTrigger} title={tooltip}>
+              ⓘ
+            </span>
+          )}
+        </div>
+        <span style={{
+          ...collapsibleStyles.chevron,
+          transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+        }}>
+          ▼
+        </span>
+      </button>
+      {isOpen && (
+        <div style={collapsibleStyles.content}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tooltip Component
+function Tooltip({ text, children }) {
+  const [show, setShow] = useState(false);
+
+  return (
+    <span
+      style={tooltipStyles.wrapper}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      {show && (
+        <span style={tooltipStyles.tooltip}>
+          {text}
+          <span style={tooltipStyles.arrow} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+// "What You'll Get" Preview Card
+function WhatYouGetCard({ projectData }) {
+  const pageCount = projectData.selectedPages.length;
+  const hasAppPages = projectData.selectedPages.some(p =>
+    ['dashboard', 'earn', 'rewards', 'wallet', 'profile', 'leaderboard'].includes(p)
+  );
+
+  return (
+    <div style={whatYouGetStyles.container}>
+      <h3 style={whatYouGetStyles.title}>✨ What You'll Get</h3>
+      <div style={whatYouGetStyles.grid}>
+        <div style={whatYouGetStyles.item}>
+          <span style={whatYouGetStyles.itemIcon}>📄</span>
+          <span style={whatYouGetStyles.itemLabel}>{pageCount} Complete Pages</span>
+        </div>
+        <div style={whatYouGetStyles.item}>
+          <span style={whatYouGetStyles.itemIcon}>📱</span>
+          <span style={whatYouGetStyles.itemLabel}>Mobile Responsive</span>
+        </div>
+        <div style={whatYouGetStyles.item}>
+          <span style={whatYouGetStyles.itemIcon}>🎨</span>
+          <span style={whatYouGetStyles.itemLabel}>Custom Colors</span>
+        </div>
+        {hasAppPages && (
+          <div style={whatYouGetStyles.item}>
+            <span style={whatYouGetStyles.itemIcon}>⚡</span>
+            <span style={whatYouGetStyles.itemLabel}>Interactive App Features</span>
+          </div>
+        )}
+        <div style={whatYouGetStyles.item}>
+          <span style={whatYouGetStyles.itemIcon}>📝</span>
+          <span style={whatYouGetStyles.itemLabel}>AI-Written Content</span>
+        </div>
+        <div style={whatYouGetStyles.item}>
+          <span style={whatYouGetStyles.itemIcon}>🚀</span>
+          <span style={whatYouGetStyles.itemLabel}>Ready to Deploy</span>
+        </div>
+      </div>
+      <div style={whatYouGetStyles.pageList}>
+        <span style={whatYouGetStyles.pageListLabel}>Pages:</span>
+        <div style={whatYouGetStyles.pageChips}>
+          {projectData.selectedPages.map(page => (
+            <span key={page} style={whatYouGetStyles.pageChip}>
+              {page.charAt(0).toUpperCase() + page.slice(1)}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Industry Detection Banner with Change Option
+function IndustryBanner({ industry, industryKey, onChangeClick, industries }) {
+  if (!industry) return null;
+
+  return (
+    <div style={industryBannerStyles.container}>
+      <div style={industryBannerStyles.left}>
+        <span style={industryBannerStyles.icon}>{industry.icon || '✨'}</span>
+        <div style={industryBannerStyles.info}>
+          <span style={industryBannerStyles.detected}>Detected Industry</span>
+          <span style={industryBannerStyles.name}>{industry.name}</span>
+        </div>
+      </div>
+      <button style={industryBannerStyles.changeBtn} onClick={onChangeClick}>
+        Change Industry
+      </button>
+    </div>
+  );
+}
+
+// Styles for P1 Components
+const wizardStyles = {
+  breadcrumbContainer: {
+    marginBottom: '24px',
+    padding: '16px 20px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255,255,255,0.06)'
+  },
+  breadcrumbTrack: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0'
+  },
+  breadcrumbStep: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  breadcrumbDot: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    background: 'rgba(255,255,255,0.05)',
+    border: '2px solid rgba(255,255,255,0.15)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '14px',
+    color: '#666',
+    transition: 'all 0.2s ease'
+  },
+  breadcrumbDotCompleted: {
+    background: 'rgba(34, 197, 94, 0.2)',
+    borderColor: '#22c55e',
+    color: '#22c55e'
+  },
+  breadcrumbDotCurrent: {
+    background: 'rgba(59, 130, 246, 0.2)',
+    borderColor: '#3b82f6',
+    color: '#3b82f6',
+    boxShadow: '0 0 0 4px rgba(59, 130, 246, 0.15)'
+  },
+  breadcrumbLabel: {
+    fontSize: '12px',
+    color: '#666',
+    fontWeight: '500',
+    minWidth: '60px'
+  },
+  breadcrumbLabelCurrent: {
+    color: '#3b82f6'
+  },
+  breadcrumbLabelCompleted: {
+    color: '#22c55e'
+  },
+  breadcrumbConnector: {
+    width: '30px',
+    height: '2px',
+    background: 'rgba(255,255,255,0.1)',
+    marginLeft: '8px',
+    marginRight: '8px'
+  },
+  breadcrumbConnectorCompleted: {
+    background: '#22c55e'
+  }
+};
+
+const collapsibleStyles = {
+  container: {
+    marginBottom: '16px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255,255,255,0.08)',
+    overflow: 'hidden'
+  },
+  header: {
+    width: '100%',
+    padding: '16px 20px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'background 0.2s ease'
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  icon: {
+    fontSize: '18px'
+  },
+  title: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#fff'
+  },
+  badge: {
+    padding: '3px 10px',
+    background: 'rgba(34, 197, 94, 0.15)',
+    borderRadius: '12px',
+    fontSize: '11px',
+    color: '#22c55e'
+  },
+  tooltipTrigger: {
+    fontSize: '14px',
+    color: '#666',
+    cursor: 'help',
+    marginLeft: '4px'
+  },
+  chevron: {
+    fontSize: '10px',
+    color: '#666',
+    transition: 'transform 0.2s ease'
+  },
+  content: {
+    padding: '0 20px 20px 20px'
+  }
+};
+
+const tooltipStyles = {
+  wrapper: {
+    position: 'relative',
+    display: 'inline-flex',
+    alignItems: 'center'
+  },
+  tooltip: {
+    position: 'absolute',
+    bottom: '100%',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    padding: '8px 12px',
+    background: '#1a1a2e',
+    border: '1px solid rgba(255,255,255,0.15)',
+    borderRadius: '8px',
+    fontSize: '12px',
+    color: '#fff',
+    whiteSpace: 'nowrap',
+    zIndex: 1000,
+    marginBottom: '8px'
+  },
+  arrow: {
+    position: 'absolute',
+    bottom: '-6px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    borderLeft: '6px solid transparent',
+    borderRight: '6px solid transparent',
+    borderTop: '6px solid rgba(255,255,255,0.15)'
+  }
+};
+
+const whatYouGetStyles = {
+  container: {
+    padding: '20px',
+    background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(59, 130, 246, 0.1))',
+    borderRadius: '12px',
+    border: '1px solid rgba(34, 197, 94, 0.2)',
+    marginBottom: '20px'
+  },
+  title: {
+    fontSize: '16px',
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: '16px',
+    margin: '0 0 16px 0'
+  },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '12px',
+    marginBottom: '16px'
+  },
+  item: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    color: '#ccc'
+  },
+  itemIcon: {
+    fontSize: '16px'
+  },
+  itemLabel: {
+    color: '#fff'
+  },
+  pageList: {
+    paddingTop: '12px',
+    borderTop: '1px solid rgba(255,255,255,0.1)'
+  },
+  pageListLabel: {
+    fontSize: '12px',
+    color: '#888',
+    marginBottom: '8px',
+    display: 'block'
+  },
+  pageChips: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px'
+  },
+  pageChip: {
+    padding: '4px 10px',
+    background: 'rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    fontSize: '11px',
+    color: '#fff'
+  }
+};
+
+const industryBannerStyles = {
+  container: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '14px 18px',
+    background: 'rgba(34, 197, 94, 0.1)',
+    borderRadius: '10px',
+    border: '1px solid rgba(34, 197, 94, 0.25)',
+    marginBottom: '20px'
+  },
+  left: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  icon: {
+    fontSize: '24px'
+  },
+  info: {
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  detected: {
+    fontSize: '11px',
+    color: '#22c55e',
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  },
+  name: {
+    fontSize: '15px',
+    color: '#fff',
+    fontWeight: '600'
+  },
+  changeBtn: {
+    padding: '8px 16px',
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '8px',
+    color: '#888',
+    fontSize: '13px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  }
+};
+
+// ============================================
 // CUSTOMIZE STEP: The WordPress-Style Editor
 // ============================================
 function CustomizeStep({ projectData, updateProject, industries, layouts, effects, onGenerate, onBack }) {
-  
+  // Section collapse state
+  const [showIndustryPicker, setShowIndustryPicker] = useState(false);
+
   // Color presets
   const colorPresets = [
     { name: 'Ocean', colors: { primary: '#0ea5e9', secondary: '#0369a1', accent: '#38bdf8' } },
@@ -3235,146 +3684,232 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
     });
   };
 
+  // Completed steps for breadcrumb
+  const completedSteps = ['choose-path', 'path', 'upload-assets'];
+
   return (
     <div style={styles.customizeContainer}>
       <button style={styles.backBtn} onClick={onBack}>← Back</button>
-      
+
       <h1 style={styles.customizeTitle}>✨ Customize Your Site</h1>
-      
-      <div style={styles.customizeGrid}>
-        {/* LEFT: Form Controls */}
-        <div style={styles.customizeForm}>
-          
-          {/* Business Name */}
-          <div style={styles.formSection}>
-            <label style={styles.formLabel}>Business Name *</label>
-            <input
-              type="text"
-              value={projectData.businessName}
-              onChange={(e) => updateProject({ businessName: e.target.value })}
-              placeholder="Your Business Name"
-              style={styles.formInput}
-            />
-          </div>
+      <p style={p1Styles.subtitle}>Configure every detail of your professional website</p>
 
-          {/* Tagline */}
-          <div style={styles.formSection}>
-            <label style={styles.formLabel}>Tagline</label>
-            <input
-              type="text"
-              value={projectData.tagline}
-              onChange={(e) => updateProject({ tagline: e.target.value })}
-              placeholder="A short description of what you do"
-              style={styles.formInput}
-            />
-          </div>
+      {/* Industry Detection Banner */}
+      {projectData.industry && (
+        <IndustryBanner
+          industry={projectData.industry}
+          industryKey={projectData.industryKey}
+          industries={industries}
+          onChangeClick={() => setShowIndustryPicker(true)}
+        />
+      )}
 
-          {/* Location */}
-          <div style={styles.formSection}>
-            <label style={styles.formLabel}>Business Location</label>
-            <input
-              type="text"
-              value={projectData.location || ''}
-              onChange={(e) => updateProject({ location: e.target.value })}
-              placeholder="e.g., San Francisco, CA or Online Only"
-              style={styles.formInput}
-            />
-            <p style={customizeStyles.fieldHint}>Helps AI customize content for your area</p>
-          </div>
-
-          {/* Target Audience */}
-          <div style={styles.formSection}>
-            <label style={styles.formLabel}>Who are your customers?</label>
-            <div style={customizeStyles.chipGrid}>
-              {[
-                { id: 'individuals', label: 'Individuals', icon: '👤' },
-                { id: 'families', label: 'Families', icon: '👨‍👩‍👧' },
-                { id: 'small-business', label: 'Small Businesses', icon: '🏪' },
-                { id: 'enterprise', label: 'Enterprise', icon: '🏢' },
-                { id: 'startups', label: 'Startups', icon: '🚀' },
-                { id: 'professionals', label: 'Professionals', icon: '💼' },
-              ].map(audience => (
+      {/* Industry Picker Modal */}
+      {showIndustryPicker && (
+        <div style={p1Styles.modalOverlay}>
+          <div style={p1Styles.modalContent}>
+            <h3 style={p1Styles.modalTitle}>Select Your Industry</h3>
+            <p style={p1Styles.modalSubtitle}>This helps us optimize your website structure</p>
+            <div style={p1Styles.industryGrid}>
+              {Object.entries(industries).map(([key, ind]) => (
                 <button
-                  key={audience.id}
+                  key={key}
                   style={{
-                    ...customizeStyles.chip,
-                    ...(projectData.targetAudience?.includes(audience.id) ? customizeStyles.chipActive : {})
+                    ...p1Styles.industryOption,
+                    ...(projectData.industryKey === key ? p1Styles.industryOptionActive : {})
                   }}
                   onClick={() => {
-                    const current = projectData.targetAudience || [];
-                    if (current.includes(audience.id)) {
-                      updateProject({ targetAudience: current.filter(a => a !== audience.id) });
-                    } else {
-                      updateProject({ targetAudience: [...current, audience.id] });
-                    }
+                    updateProject({
+                      industryKey: key,
+                      industry: ind,
+                      layoutKey: null,
+                      effects: ind?.effects || []
+                    });
+                    setShowIndustryPicker(false);
                   }}
+                >
+                  <span style={p1Styles.industryIcon}>{ind.icon}</span>
+                  <span style={p1Styles.industryName}>{ind.name}</span>
+                </button>
+              ))}
+            </div>
+            <button style={p1Styles.modalClose} onClick={() => setShowIndustryPicker(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div style={styles.customizeGrid}>
+        {/* LEFT: Form Controls - Now with Collapsible Sections */}
+        <div style={styles.customizeForm}>
+
+          {/* SECTION 1: Business Identity */}
+          <CollapsibleSection
+            title="Business Identity"
+            icon="🏢"
+            defaultOpen={true}
+            tooltip="Basic information about your business"
+          >
+            {/* Business Name */}
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>
+                Business Name *
+                <span style={p1Styles.requiredStar}>Required</span>
+              </label>
+              <input
+                type="text"
+                value={projectData.businessName}
+                onChange={(e) => updateProject({ businessName: e.target.value })}
+                placeholder="Your Business Name"
+                style={styles.formInput}
+              />
+            </div>
+
+            {/* Tagline */}
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>Tagline</label>
+              <input
+                type="text"
+                value={projectData.tagline}
+                onChange={(e) => updateProject({ tagline: e.target.value })}
+                placeholder="A short description of what you do"
+                style={styles.formInput}
+              />
+              <p style={customizeStyles.fieldHint}>Appears in your hero section and browser title</p>
+            </div>
+
+            {/* Location */}
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>Business Location</label>
+              <input
+                type="text"
+                value={projectData.location || ''}
+                onChange={(e) => updateProject({ location: e.target.value })}
+                placeholder="e.g., San Francisco, CA or Online Only"
+                style={styles.formInput}
+              />
+              <p style={customizeStyles.fieldHint}>Helps AI customize content for your area</p>
+            </div>
+          </CollapsibleSection>
+
+          {/* SECTION 2: Target & Goals */}
+          <CollapsibleSection
+            title="Target Audience & Goals"
+            icon="🎯"
+            defaultOpen={true}
+            tooltip="Define who you serve and what action you want them to take"
+          >
+            {/* Target Audience */}
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>Who are your customers?</label>
+              <p style={customizeStyles.fieldHint}>Select all that apply - helps AI write relevant content</p>
+              <div style={customizeStyles.chipGrid}>
+                {[
+                  { id: 'individuals', label: 'Individuals', icon: '👤' },
+                  { id: 'families', label: 'Families', icon: '👨‍👩‍👧' },
+                  { id: 'small-business', label: 'Small Businesses', icon: '🏪' },
+                  { id: 'enterprise', label: 'Enterprise', icon: '🏢' },
+                  { id: 'startups', label: 'Startups', icon: '🚀' },
+                  { id: 'professionals', label: 'Professionals', icon: '💼' },
+                ].map(audience => (
+                  <button
+                    key={audience.id}
+                    style={{
+                      ...customizeStyles.chip,
+                      ...(projectData.targetAudience?.includes(audience.id) ? customizeStyles.chipActive : {})
+                    }}
+                    onClick={() => {
+                      const current = projectData.targetAudience || [];
+                      if (current.includes(audience.id)) {
+                        updateProject({ targetAudience: current.filter(a => a !== audience.id) });
+                      } else {
+                        updateProject({ targetAudience: [...current, audience.id] });
+                      }
+                    }}
                 >
                   <span>{audience.icon}</span>
                   <span>{audience.label}</span>
                 </button>
               ))}
             </div>
-            <p style={customizeStyles.fieldHint}>Select all that apply</p>
-          </div>
-
-          {/* Primary CTA */}
-          <div style={styles.formSection}>
-            <label style={styles.formLabel}>What should visitors do?</label>
-            <div style={customizeStyles.radioGrid}>
-              {[
-                { id: 'contact', label: 'Contact Us', icon: '📧' },
-                { id: 'book', label: 'Book Appointment', icon: '📅' },
-                { id: 'call', label: 'Call Now', icon: '📞' },
-                { id: 'quote', label: 'Get a Quote', icon: '💬' },
-                { id: 'buy', label: 'Buy Now', icon: '🛒' },
-                { id: 'visit', label: 'Visit Location', icon: '📍' },
-              ].map(cta => (
-                <label
-                  key={cta.id}
-                  style={{
-                    ...customizeStyles.radioLabel,
-                    ...(projectData.primaryCTA === cta.id ? customizeStyles.radioLabelActive : {})
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="primaryCTA"
-                    value={cta.id}
-                    checked={projectData.primaryCTA === cta.id}
-                    onChange={(e) => updateProject({ primaryCTA: e.target.value })}
-                    style={customizeStyles.radioInput}
-                  />
-                  <span>{cta.icon}</span>
-                  <span>{cta.label}</span>
-                </label>
-              ))}
             </div>
-          </div>
 
-          {/* Tone Slider */}
-          <div style={styles.formSection}>
-            <label style={styles.formLabel}>Communication Style</label>
-            <div style={customizeStyles.sliderContainer}>
-              <span style={customizeStyles.sliderLabel}>Professional</span>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={projectData.tone || 50}
-                onChange={(e) => updateProject({ tone: parseInt(e.target.value) })}
-                style={customizeStyles.slider}
-              />
-              <span style={customizeStyles.sliderLabel}>Friendly</span>
+            {/* Primary CTA - Call to Action */}
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>
+                Primary Call-to-Action
+                <span style={p1Styles.tooltipIcon} title="The main action button visitors will see on your site">ⓘ</span>
+              </label>
+              <p style={customizeStyles.fieldHint}>What should visitors do when they land on your site?</p>
+              <div style={customizeStyles.radioGrid}>
+                {[
+                  { id: 'contact', label: 'Contact Us', icon: '📧' },
+                  { id: 'book', label: 'Book Appointment', icon: '📅' },
+                  { id: 'call', label: 'Call Now', icon: '📞' },
+                  { id: 'quote', label: 'Get a Quote', icon: '💬' },
+                  { id: 'buy', label: 'Buy Now', icon: '🛒' },
+                  { id: 'visit', label: 'Visit Location', icon: '📍' },
+                ].map(cta => (
+                  <label
+                    key={cta.id}
+                    style={{
+                      ...customizeStyles.radioLabel,
+                      ...(projectData.primaryCTA === cta.id ? customizeStyles.radioLabelActive : {})
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="primaryCTA"
+                      value={cta.id}
+                      checked={projectData.primaryCTA === cta.id}
+                      onChange={(e) => updateProject({ primaryCTA: e.target.value })}
+                      style={customizeStyles.radioInput}
+                    />
+                    <span>{cta.icon}</span>
+                    <span>{cta.label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
-            <p style={customizeStyles.toneHint}>
-              {projectData.tone < 33 ? 'Formal, corporate language' :
-               projectData.tone > 66 ? 'Casual, conversational tone' : 'Balanced professional tone'}
-            </p>
-          </div>
 
-          {/* Colors */}
-          <div style={styles.formSection}>
-            <label style={styles.formLabel}>Colors</label>
+            {/* Communication Tone */}
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>
+                Communication Style
+                <span style={p1Styles.tooltipIcon} title="How formal or casual should your website copy sound?">ⓘ</span>
+              </label>
+              <p style={customizeStyles.fieldHint}>This affects how the AI writes your content</p>
+              <div style={customizeStyles.sliderContainer}>
+                <span style={customizeStyles.sliderLabel}>Professional</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={projectData.tone || 50}
+                  onChange={(e) => updateProject({ tone: parseInt(e.target.value) })}
+                  style={customizeStyles.slider}
+                />
+                <span style={customizeStyles.sliderLabel}>Friendly</span>
+              </div>
+              <p style={customizeStyles.toneHint}>
+                {projectData.tone < 33 ? '👔 Formal, corporate language' :
+                 projectData.tone > 66 ? '😊 Casual, conversational tone' : '🤝 Balanced professional tone'}
+              </p>
+            </div>
+          </CollapsibleSection>
+
+          {/* SECTION 3: Design & Colors */}
+          <CollapsibleSection
+            title="Design & Colors"
+            icon="🎨"
+            defaultOpen={true}
+            badge={projectData.selectedPreset || 'Custom'}
+            tooltip="Choose your color scheme and visual style"
+          >
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>Color Palette</label>
+              <p style={customizeStyles.fieldHint}>Pick a preset or customize your own colors</p>
             
             {/* Presets */}
             <div style={styles.colorPresets}>
@@ -3428,76 +3963,99 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
                 />
               </div>
             </div>
-          </div>
-
-          {/* Pages - Website */}
-          <div style={styles.formSection}>
-            <label style={styles.formLabel}>Website Pages ({projectData.selectedPages.filter(p => !pageOptions.find(po => po.id === p)?.appPage).length} selected)</label>
-            <div style={styles.pageGrid}>
-              {pageOptions.filter(p => !p.appPage).map(page => (
-                <button
-                  key={page.id}
-                  style={{
-                    ...styles.pageChip,
-                    ...(projectData.selectedPages.includes(page.id) ? styles.pageChipActive : {})
-                  }}
-                  onClick={() => togglePage(page.id)}
-                >
-                  <span>{page.icon}</span>
-                  <span>{page.label}</span>
-                </button>
-              ))}
             </div>
-          </div>
+          </CollapsibleSection>
 
-          {/* Pages - App/Dashboard */}
-          <div style={styles.formSection}>
-            <label style={styles.formLabel}>
-              App Pages
-              <span style={customizeStyles.optionalBadge}>Optional</span>
-            </label>
-            <p style={customizeStyles.fieldHint}>Add interactive features like dashboards and user accounts</p>
-            <div style={styles.pageGrid}>
-              {pageOptions.filter(p => p.appPage).map(page => (
-                <button
-                  key={page.id}
-                  style={{
-                    ...styles.pageChip,
-                    ...(projectData.selectedPages.includes(page.id) ? styles.pageChipActive : {})
-                  }}
-                  onClick={() => togglePage(page.id)}
-                >
-                  <span>{page.icon}</span>
-                  <span>{page.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Industry (if changeable) */}
-          {Object.keys(industries).length > 0 && (
+          {/* SECTION 4: Pages */}
+          <CollapsibleSection
+            title="Website Pages"
+            icon="📄"
+            defaultOpen={true}
+            badge={`${projectData.selectedPages.length} selected`}
+            tooltip="Choose which pages to include in your website"
+          >
+            {/* Website Pages */}
             <div style={styles.formSection}>
-              <label style={styles.formLabel}>Industry Template</label>
-              <select
-                value={projectData.industryKey || ''}
-                onChange={(e) => {
-                  const ind = industries[e.target.value];
-                  updateProject({
-                    industryKey: e.target.value,
-                    industry: ind,
-                    layoutKey: null, // Reset layout when industry changes
-                    effects: ind?.effects || []
-                  });
-                }}
-                style={styles.formSelect}
-              >
-                <option value="">Auto-detect</option>
-                {Object.entries(industries).map(([key, ind]) => (
-                  <option key={key} value={key}>{ind.icon} {ind.name}</option>
+              <label style={styles.formLabel}>Standard Pages</label>
+              <p style={customizeStyles.fieldHint}>Core pages for your website</p>
+              <div style={styles.pageGrid}>
+                {pageOptions.filter(p => !p.appPage).map(page => (
+                  <button
+                    key={page.id}
+                    style={{
+                      ...styles.pageChip,
+                      ...(projectData.selectedPages.includes(page.id) ? styles.pageChipActive : {})
+                    }}
+                    onClick={() => togglePage(page.id)}
+                  >
+                    <span>{page.icon}</span>
+                    <span>{page.label}</span>
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
-          )}
+
+            {/* App/Dashboard Pages */}
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>
+                App & Dashboard Pages
+                <span style={customizeStyles.optionalBadge}>Advanced</span>
+              </label>
+              <p style={customizeStyles.fieldHint}>Interactive features for member portals, dashboards, and user accounts</p>
+              <div style={styles.pageGrid}>
+                {pageOptions.filter(p => p.appPage).map(page => (
+                  <button
+                    key={page.id}
+                    style={{
+                      ...styles.pageChip,
+                      ...(projectData.selectedPages.includes(page.id) ? styles.pageChipActive : {})
+                    }}
+                    onClick={() => togglePage(page.id)}
+                  >
+                    <span>{page.icon}</span>
+                    <span>{page.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          {/* SECTION 5: Industry & Layout */}
+          <CollapsibleSection
+            title="Industry & Layout"
+            icon="⚙️"
+            defaultOpen={false}
+            badge={projectData.industry?.name || 'Auto-detect'}
+            tooltip="Fine-tune your site structure based on your industry"
+          >
+            {/* Industry Selection */}
+            {Object.keys(industries).length > 0 && (
+              <div style={styles.formSection}>
+                <label style={styles.formLabel}>
+                  Industry Template
+                  <span style={p1Styles.tooltipIcon} title="Industry templates include optimized page layouts and section ordering for your business type">ⓘ</span>
+                </label>
+                <p style={customizeStyles.fieldHint}>Select your industry for optimized page structure</p>
+                <select
+                  value={projectData.industryKey || ''}
+                  onChange={(e) => {
+                    const ind = industries[e.target.value];
+                    updateProject({
+                      industryKey: e.target.value,
+                      industry: ind,
+                      layoutKey: null,
+                      effects: ind?.effects || []
+                    });
+                  }}
+                  style={styles.formSelect}
+                >
+                  <option value="">Auto-detect from business name</option>
+                  {Object.entries(industries).map(([key, ind]) => (
+                    <option key={key} value={key}>{ind.icon} {ind.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
           {/* Layout Selection - Industry-Specific */}
           {projectData.industryKey && INDUSTRY_LAYOUTS[projectData.industryKey] && (
@@ -3579,19 +4137,34 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
               )}
             </div>
           )}
+          </CollapsibleSection>
 
-          {/* Extra Details for AI */}
-          <div style={styles.formSection}>
-            <label style={styles.formLabel}>Extra Details for AI (Optional)</label>
-            <textarea
-              value={projectData.extraDetails}
-              onChange={(e) => updateProject({ extraDetails: e.target.value })}
-              placeholder="Give AI more context... e.g., 'This is an NFT portfolio tracker. Replace eBay pricing with OpenSea floor prices. Use wallet connection instead of email login. Show ETH values and chain icons.'"
-              style={styles.extraDetailsTextarea}
-              rows={4}
-            />
-            <p style={styles.extraDetailsHint}>💡 The more detail you provide, the more customized your pages will be</p>
-          </div>
+          {/* SECTION 6: Advanced - Extra Details */}
+          <CollapsibleSection
+            title="Advanced AI Instructions"
+            icon="🤖"
+            defaultOpen={false}
+            tooltip="Give the AI specific instructions for customizing your site"
+          >
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>
+                Extra Details for AI
+                <span style={customizeStyles.optionalBadge}>Optional</span>
+              </label>
+              <p style={customizeStyles.fieldHint}>
+                Add specific instructions, unique features, or context the AI should know about
+              </p>
+              <textarea
+                value={projectData.extraDetails}
+                onChange={(e) => updateProject({ extraDetails: e.target.value })}
+                placeholder="Give AI more context... e.g., 'This is an NFT portfolio tracker. Replace eBay pricing with OpenSea floor prices. Use wallet connection instead of email login. Show ETH values and chain icons.'"
+                style={styles.extraDetailsTextarea}
+                rows={4}
+              />
+              <p style={styles.extraDetailsHint}>💡 The more detail you provide, the more customized your pages will be</p>
+            </div>
+          </CollapsibleSection>
+
         </div>
 
         {/* RIGHT: Live Preview */}
@@ -3638,22 +4211,35 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
         </div>
       </div>
 
-      {/* Generate Button */}
+      {/* What You'll Get Preview */}
+      <WhatYouGetCard projectData={projectData} />
+
+      {/* Generate Button Section */}
       <div style={styles.generateSection}>
         <div style={styles.generateSummary}>
           <span>{projectData.industry?.icon || '✨'} {projectData.industry?.name || 'Custom'}</span>
-          <span>•</span>
+          <span style={p1Styles.summarySeparator}>•</span>
           <span>{projectData.selectedPages.length} pages</span>
-          <span>•</span>
-          <span style={{color: projectData.colors.primary}}>● Primary</span>
+          <span style={p1Styles.summarySeparator}>•</span>
+          <span style={{display: 'flex', alignItems: 'center', gap: '4px'}}>
+            <span style={{width: '10px', height: '10px', borderRadius: '50%', background: projectData.colors.primary}} />
+            {projectData.selectedPreset || 'Custom'} theme
+          </span>
         </div>
-        <button 
-          style={styles.generateBtn}
+        {!projectData.businessName.trim() && (
+          <p style={p1Styles.warningText}>⚠️ Please enter a business name to continue</p>
+        )}
+        <button
+          style={{
+            ...styles.generateBtn,
+            opacity: projectData.businessName.trim() ? 1 : 0.5
+          }}
           onClick={onGenerate}
           disabled={!projectData.businessName.trim()}
         >
           🚀 Generate My Website
         </button>
+        <p style={p1Styles.generateHint}>Takes about 60 seconds • You can preview before deploying</p>
       </div>
     </div>
   );
@@ -3746,6 +4332,124 @@ const customizeStyles = {
     borderRadius: '4px',
     fontSize: '11px',
     color: '#666'
+  }
+};
+
+// P1 Visual Improvement Styles
+const p1Styles = {
+  subtitle: {
+    color: '#888',
+    fontSize: '15px',
+    textAlign: 'center',
+    marginBottom: '24px',
+    marginTop: '-8px'
+  },
+  requiredStar: {
+    marginLeft: '8px',
+    padding: '2px 8px',
+    background: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: '4px',
+    fontSize: '10px',
+    color: '#ef4444',
+    fontWeight: '500'
+  },
+  tooltipIcon: {
+    marginLeft: '6px',
+    fontSize: '14px',
+    color: '#666',
+    cursor: 'help'
+  },
+  summarySeparator: {
+    color: '#444'
+  },
+  warningText: {
+    color: '#f59e0b',
+    fontSize: '13px',
+    marginBottom: '12px',
+    textAlign: 'center'
+  },
+  generateHint: {
+    color: '#666',
+    fontSize: '12px',
+    marginTop: '12px',
+    textAlign: 'center'
+  },
+  // Industry picker modal styles
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.85)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000
+  },
+  modalContent: {
+    background: '#1a1a1f',
+    borderRadius: '16px',
+    padding: '32px',
+    maxWidth: '600px',
+    width: '90%',
+    maxHeight: '80vh',
+    overflow: 'auto',
+    border: '1px solid rgba(255,255,255,0.1)'
+  },
+  modalTitle: {
+    fontSize: '22px',
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: '8px',
+    textAlign: 'center',
+    margin: '0 0 8px 0'
+  },
+  modalSubtitle: {
+    color: '#888',
+    fontSize: '14px',
+    textAlign: 'center',
+    marginBottom: '24px'
+  },
+  industryGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '12px',
+    marginBottom: '24px'
+  },
+  industryOption: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '16px 12px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  industryOptionActive: {
+    background: 'rgba(34, 197, 94, 0.15)',
+    borderColor: '#22c55e'
+  },
+  industryIcon: {
+    fontSize: '28px'
+  },
+  industryName: {
+    fontSize: '12px',
+    color: '#fff',
+    textAlign: 'center'
+  },
+  modalClose: {
+    width: '100%',
+    padding: '14px',
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '10px',
+    color: '#888',
+    fontSize: '14px',
+    cursor: 'pointer'
   }
 };
 
