@@ -203,6 +203,8 @@ export default function App() {
     industry: null,
     industryKey: null,
     layoutKey: null, // Selected layout within industry
+    layoutStyleId: null, // Visual layout style selection (e.g., 'menu-hero', 'trust-authority')
+    layoutStylePreview: null, // Preview config for the selected layout style
 
     // NEW: Business basics
     location: '',
@@ -439,7 +441,10 @@ export default function App() {
           location: projectData.location,
           targetAudience: projectData.targetAudience,
           primaryCTA: projectData.primaryCTA,
-          tone: toneLabel
+          tone: toneLabel,
+          // Layout style selection
+          layoutStyleId: projectData.layoutStyleId,
+          layoutStylePreview: projectData.layoutStylePreview
         }
       };
 
@@ -3361,6 +3366,1080 @@ function IndustryBanner({ industry, industryKey, onChangeClick, industries }) {
   );
 }
 
+// ============================================
+// LAYOUT STYLE SELECTOR - Visual Layout Previews
+// ============================================
+
+// Industry-specific layout options
+const LAYOUT_OPTIONS = {
+  // Restaurant / Food industry layouts
+  restaurant: [
+    {
+      id: 'menu-hero',
+      name: 'Menu Hero',
+      description: 'Large hero image with menu focus',
+      preview: { heroStyle: 'full', menuPosition: 'center', ctaStyle: 'overlay' }
+    },
+    {
+      id: 'gallery-first',
+      name: 'Gallery First',
+      description: 'Photo gallery showcases your dishes',
+      preview: { heroStyle: 'split', menuPosition: 'side', ctaStyle: 'button' }
+    },
+    {
+      id: 'reservation-focus',
+      name: 'Reservation Focus',
+      description: 'Booking widget front and center',
+      preview: { heroStyle: 'minimal', menuPosition: 'below', ctaStyle: 'prominent' }
+    }
+  ],
+  cafe: [
+    {
+      id: 'cozy-vibe',
+      name: 'Cozy Vibe',
+      description: 'Warm, inviting atmosphere feel',
+      preview: { heroStyle: 'full', menuPosition: 'center', ctaStyle: 'overlay' }
+    },
+    {
+      id: 'menu-board',
+      name: 'Menu Board',
+      description: 'Classic coffee shop menu style',
+      preview: { heroStyle: 'split', menuPosition: 'side', ctaStyle: 'button' }
+    },
+    {
+      id: 'location-centric',
+      name: 'Location Centric',
+      description: 'Map and hours prominently displayed',
+      preview: { heroStyle: 'minimal', menuPosition: 'below', ctaStyle: 'prominent' }
+    }
+  ],
+  // Professional services layouts
+  'law-firm': [
+    {
+      id: 'trust-authority',
+      name: 'Trust & Authority',
+      description: 'Professional credibility focus',
+      preview: { heroStyle: 'corporate', contentStyle: 'formal', ctaStyle: 'subtle' }
+    },
+    {
+      id: 'case-results',
+      name: 'Case Results',
+      description: 'Showcase wins and testimonials',
+      preview: { heroStyle: 'split', contentStyle: 'results', ctaStyle: 'consultation' }
+    },
+    {
+      id: 'practice-areas',
+      name: 'Practice Areas',
+      description: 'Services organized by specialty',
+      preview: { heroStyle: 'minimal', contentStyle: 'services', ctaStyle: 'prominent' }
+    }
+  ],
+  dental: [
+    {
+      id: 'patient-comfort',
+      name: 'Patient Comfort',
+      description: 'Friendly, welcoming atmosphere',
+      preview: { heroStyle: 'warm', contentStyle: 'caring', ctaStyle: 'booking' }
+    },
+    {
+      id: 'services-grid',
+      name: 'Services Grid',
+      description: 'All treatments clearly displayed',
+      preview: { heroStyle: 'clean', contentStyle: 'services', ctaStyle: 'prominent' }
+    },
+    {
+      id: 'team-focused',
+      name: 'Team Focused',
+      description: 'Meet your dental professionals',
+      preview: { heroStyle: 'team', contentStyle: 'personal', ctaStyle: 'consultation' }
+    }
+  ],
+  healthcare: [
+    {
+      id: 'patient-first',
+      name: 'Patient First',
+      description: 'Compassionate care messaging',
+      preview: { heroStyle: 'warm', contentStyle: 'caring', ctaStyle: 'booking' }
+    },
+    {
+      id: 'services-focus',
+      name: 'Services Focus',
+      description: 'Medical services highlighted',
+      preview: { heroStyle: 'clean', contentStyle: 'services', ctaStyle: 'prominent' }
+    },
+    {
+      id: 'credentials',
+      name: 'Credentials',
+      description: 'Expertise and qualifications',
+      preview: { heroStyle: 'professional', contentStyle: 'trust', ctaStyle: 'consultation' }
+    }
+  ],
+  // Fitness & Wellness layouts
+  fitness: [
+    {
+      id: 'energy-pump',
+      name: 'Energy Pump',
+      description: 'Bold, motivational design',
+      preview: { heroStyle: 'dynamic', contentStyle: 'energetic', ctaStyle: 'action' }
+    },
+    {
+      id: 'class-schedule',
+      name: 'Class Schedule',
+      description: 'Schedule front and center',
+      preview: { heroStyle: 'clean', contentStyle: 'schedule', ctaStyle: 'booking' }
+    },
+    {
+      id: 'transformation',
+      name: 'Transformation',
+      description: 'Before/after results focus',
+      preview: { heroStyle: 'results', contentStyle: 'testimonials', ctaStyle: 'trial' }
+    }
+  ],
+  yoga: [
+    {
+      id: 'zen-minimal',
+      name: 'Zen Minimal',
+      description: 'Clean, peaceful aesthetic',
+      preview: { heroStyle: 'calm', contentStyle: 'minimal', ctaStyle: 'gentle' }
+    },
+    {
+      id: 'class-calendar',
+      name: 'Class Calendar',
+      description: 'Easy class booking',
+      preview: { heroStyle: 'serene', contentStyle: 'schedule', ctaStyle: 'booking' }
+    },
+    {
+      id: 'instructor-led',
+      name: 'Instructor Led',
+      description: 'Personal connection focus',
+      preview: { heroStyle: 'personal', contentStyle: 'team', ctaStyle: 'consultation' }
+    }
+  ],
+  'spa-salon': [
+    {
+      id: 'luxury-feel',
+      name: 'Luxury Feel',
+      description: 'Premium spa experience',
+      preview: { heroStyle: 'elegant', contentStyle: 'luxury', ctaStyle: 'booking' }
+    },
+    {
+      id: 'service-menu',
+      name: 'Service Menu',
+      description: 'Treatments with pricing',
+      preview: { heroStyle: 'clean', contentStyle: 'menu', ctaStyle: 'prominent' }
+    },
+    {
+      id: 'gallery-showcase',
+      name: 'Gallery Showcase',
+      description: 'Visual portfolio of work',
+      preview: { heroStyle: 'gallery', contentStyle: 'portfolio', ctaStyle: 'booking' }
+    }
+  ],
+  // Real Estate layouts
+  'real-estate': [
+    {
+      id: 'property-search',
+      name: 'Property Search',
+      description: 'Search-focused homepage',
+      preview: { heroStyle: 'search', contentStyle: 'listings', ctaStyle: 'search' }
+    },
+    {
+      id: 'agent-brand',
+      name: 'Agent Brand',
+      description: 'Personal agent branding',
+      preview: { heroStyle: 'personal', contentStyle: 'trust', ctaStyle: 'contact' }
+    },
+    {
+      id: 'featured-listings',
+      name: 'Featured Listings',
+      description: 'Showcase top properties',
+      preview: { heroStyle: 'gallery', contentStyle: 'featured', ctaStyle: 'browse' }
+    }
+  ],
+  // Construction / Trade layouts
+  construction: [
+    {
+      id: 'project-showcase',
+      name: 'Project Showcase',
+      description: 'Portfolio of completed work',
+      preview: { heroStyle: 'portfolio', contentStyle: 'projects', ctaStyle: 'quote' }
+    },
+    {
+      id: 'services-list',
+      name: 'Services List',
+      description: 'Clear service offerings',
+      preview: { heroStyle: 'professional', contentStyle: 'services', ctaStyle: 'estimate' }
+    },
+    {
+      id: 'trust-builder',
+      name: 'Trust Builder',
+      description: 'Certifications and reviews',
+      preview: { heroStyle: 'credibility', contentStyle: 'trust', ctaStyle: 'contact' }
+    }
+  ],
+  // SaaS / Tech layouts
+  saas: [
+    {
+      id: 'product-hero',
+      name: 'Product Hero',
+      description: 'Product screenshot focus',
+      preview: { heroStyle: 'product', contentStyle: 'features', ctaStyle: 'signup' }
+    },
+    {
+      id: 'feature-grid',
+      name: 'Feature Grid',
+      description: 'Benefits and features',
+      preview: { heroStyle: 'clean', contentStyle: 'benefits', ctaStyle: 'trial' }
+    },
+    {
+      id: 'social-proof',
+      name: 'Social Proof',
+      description: 'Logos and testimonials',
+      preview: { heroStyle: 'minimal', contentStyle: 'trust', ctaStyle: 'demo' }
+    }
+  ],
+  // Default layouts for any industry
+  default: [
+    {
+      id: 'classic-hero',
+      name: 'Classic Hero',
+      description: 'Traditional hero with CTA',
+      preview: { heroStyle: 'standard', contentStyle: 'balanced', ctaStyle: 'prominent' }
+    },
+    {
+      id: 'services-first',
+      name: 'Services First',
+      description: 'Lead with what you offer',
+      preview: { heroStyle: 'minimal', contentStyle: 'services', ctaStyle: 'contact' }
+    },
+    {
+      id: 'story-driven',
+      name: 'Story Driven',
+      description: 'About us prominence',
+      preview: { heroStyle: 'narrative', contentStyle: 'story', ctaStyle: 'learn' }
+    }
+  ]
+};
+
+// Get layouts for a specific industry or default
+const getLayoutsForIndustry = (industryKey) => {
+  return LAYOUT_OPTIONS[industryKey] || LAYOUT_OPTIONS.default;
+};
+
+// Layout Style Selector Component with Visual Previews
+function LayoutStyleSelector({ industryKey, selectedLayout, onSelectLayout, colors }) {
+  const layouts = getLayoutsForIndustry(industryKey);
+
+  return (
+    <div style={layoutSelectorStyles.container}>
+      <div style={layoutSelectorStyles.grid}>
+        {layouts.map(layout => (
+          <button
+            key={layout.id}
+            style={{
+              ...layoutSelectorStyles.card,
+              ...(selectedLayout === layout.id ? layoutSelectorStyles.cardActive : {})
+            }}
+            onClick={() => onSelectLayout(layout.id, layout.preview)}
+          >
+            {/* Mini Preview Thumbnail */}
+            <div style={layoutSelectorStyles.thumbnailContainer}>
+              <LayoutThumbnail
+                layout={layout}
+                colors={colors}
+                isSelected={selectedLayout === layout.id}
+              />
+            </div>
+
+            {/* Layout Info */}
+            <div style={layoutSelectorStyles.info}>
+              <div style={layoutSelectorStyles.name}>{layout.name}</div>
+              <div style={layoutSelectorStyles.description}>{layout.description}</div>
+            </div>
+
+            {/* Selected Indicator */}
+            {selectedLayout === layout.id && (
+              <div style={layoutSelectorStyles.checkmark}>✓</div>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Mini Layout Thumbnail Component
+function LayoutThumbnail({ layout, colors, isSelected }) {
+  const preview = layout.preview;
+
+  // Different thumbnail styles based on hero style
+  const renderHero = () => {
+    switch (preview.heroStyle) {
+      case 'full':
+      case 'dynamic':
+      case 'elegant':
+        return (
+          <div style={{
+            ...layoutThumbnailStyles.heroFull,
+            background: `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`
+          }}>
+            <div style={layoutThumbnailStyles.heroText} />
+            <div style={layoutThumbnailStyles.heroCta} />
+          </div>
+        );
+      case 'split':
+      case 'clean':
+        return (
+          <div style={layoutThumbnailStyles.heroSplit}>
+            <div style={layoutThumbnailStyles.heroSplitLeft}>
+              <div style={layoutThumbnailStyles.heroText} />
+              <div style={{...layoutThumbnailStyles.heroCta, background: colors.primary}} />
+            </div>
+            <div style={{
+              ...layoutThumbnailStyles.heroSplitRight,
+              background: `linear-gradient(135deg, ${colors.primary}40, ${colors.secondary}40)`
+            }} />
+          </div>
+        );
+      case 'minimal':
+      case 'corporate':
+      case 'professional':
+        return (
+          <div style={layoutThumbnailStyles.heroMinimal}>
+            <div style={{...layoutThumbnailStyles.navBar, background: colors.primary}} />
+            <div style={layoutThumbnailStyles.heroTextLarge} />
+            <div style={{...layoutThumbnailStyles.heroCta, background: colors.primary}} />
+          </div>
+        );
+      case 'gallery':
+      case 'portfolio':
+        return (
+          <div style={layoutThumbnailStyles.heroGallery}>
+            <div style={{...layoutThumbnailStyles.galleryItem, background: `${colors.primary}30`}} />
+            <div style={{...layoutThumbnailStyles.galleryItem, background: `${colors.secondary}30`}} />
+            <div style={{...layoutThumbnailStyles.galleryItem, background: `${colors.accent}30`}} />
+          </div>
+        );
+      default:
+        return (
+          <div style={{
+            ...layoutThumbnailStyles.heroFull,
+            background: `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`
+          }}>
+            <div style={layoutThumbnailStyles.heroText} />
+            <div style={layoutThumbnailStyles.heroCta} />
+          </div>
+        );
+    }
+  };
+
+  // Render content section
+  const renderContent = () => {
+    switch (preview.contentStyle) {
+      case 'services':
+      case 'features':
+      case 'benefits':
+        return (
+          <div style={layoutThumbnailStyles.contentGrid}>
+            <div style={{...layoutThumbnailStyles.contentCard, borderTop: `2px solid ${colors.accent}`}} />
+            <div style={{...layoutThumbnailStyles.contentCard, borderTop: `2px solid ${colors.accent}`}} />
+            <div style={{...layoutThumbnailStyles.contentCard, borderTop: `2px solid ${colors.accent}`}} />
+          </div>
+        );
+      case 'testimonials':
+      case 'trust':
+        return (
+          <div style={layoutThumbnailStyles.contentTestimonials}>
+            <div style={layoutThumbnailStyles.testimonialCard}>
+              <div style={layoutThumbnailStyles.testimonialQuote} />
+            </div>
+          </div>
+        );
+      default:
+        return (
+          <div style={layoutThumbnailStyles.contentDefault}>
+            <div style={layoutThumbnailStyles.contentLine} />
+            <div style={{...layoutThumbnailStyles.contentLine, width: '70%'}} />
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div style={{
+      ...layoutThumbnailStyles.container,
+      ...(isSelected ? layoutThumbnailStyles.containerSelected : {})
+    }}>
+      {renderHero()}
+      {renderContent()}
+    </div>
+  );
+}
+
+// Styles for Layout Selector
+const layoutSelectorStyles = {
+  container: {
+    width: '100%'
+  },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '16px'
+  },
+  card: {
+    position: 'relative',
+    padding: '12px',
+    background: 'rgba(255,255,255,0.02)',
+    border: '2px solid rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    textAlign: 'left'
+  },
+  cardActive: {
+    borderColor: '#22c55e',
+    background: 'rgba(34, 197, 94, 0.1)'
+  },
+  thumbnailContainer: {
+    marginBottom: '12px',
+    borderRadius: '8px',
+    overflow: 'hidden'
+  },
+  info: {
+    padding: '0 4px'
+  },
+  name: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: '4px'
+  },
+  description: {
+    fontSize: '11px',
+    color: '#888',
+    lineHeight: '1.3'
+  },
+  checkmark: {
+    position: 'absolute',
+    top: '8px',
+    right: '8px',
+    width: '20px',
+    height: '20px',
+    borderRadius: '50%',
+    background: '#22c55e',
+    color: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '12px',
+    fontWeight: 'bold'
+  }
+};
+
+// Styles for Layout Thumbnails (mini previews)
+const layoutThumbnailStyles = {
+  container: {
+    width: '100%',
+    height: '80px',
+    background: '#1a1a2e',
+    borderRadius: '6px',
+    overflow: 'hidden',
+    border: '1px solid rgba(255,255,255,0.1)'
+  },
+  containerSelected: {
+    boxShadow: '0 0 0 2px rgba(34, 197, 94, 0.3)'
+  },
+  // Hero styles
+  heroFull: {
+    height: '45px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '4px'
+  },
+  heroSplit: {
+    height: '45px',
+    display: 'flex'
+  },
+  heroSplitLeft: {
+    flex: 1,
+    padding: '8px',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: '4px'
+  },
+  heroSplitRight: {
+    width: '40%'
+  },
+  heroMinimal: {
+    height: '45px',
+    padding: '6px 8px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px'
+  },
+  heroGallery: {
+    height: '45px',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '2px',
+    padding: '4px'
+  },
+  navBar: {
+    height: '8px',
+    borderRadius: '2px'
+  },
+  heroText: {
+    width: '60%',
+    height: '6px',
+    background: 'rgba(255,255,255,0.9)',
+    borderRadius: '2px'
+  },
+  heroTextLarge: {
+    width: '70%',
+    height: '8px',
+    background: 'rgba(255,255,255,0.2)',
+    borderRadius: '2px'
+  },
+  heroCta: {
+    width: '35%',
+    height: '6px',
+    background: 'rgba(255,255,255,0.3)',
+    borderRadius: '2px'
+  },
+  galleryItem: {
+    borderRadius: '2px'
+  },
+  // Content styles
+  contentGrid: {
+    height: '35px',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '4px',
+    padding: '6px'
+  },
+  contentCard: {
+    background: 'rgba(255,255,255,0.05)',
+    borderRadius: '3px'
+  },
+  contentTestimonials: {
+    height: '35px',
+    padding: '6px',
+    display: 'flex',
+    justifyContent: 'center'
+  },
+  testimonialCard: {
+    width: '70%',
+    background: 'rgba(255,255,255,0.05)',
+    borderRadius: '3px',
+    padding: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  testimonialQuote: {
+    width: '80%',
+    height: '4px',
+    background: 'rgba(255,255,255,0.2)',
+    borderRadius: '2px'
+  },
+  contentDefault: {
+    height: '35px',
+    padding: '8px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px'
+  },
+  contentLine: {
+    width: '90%',
+    height: '4px',
+    background: 'rgba(255,255,255,0.1)',
+    borderRadius: '2px'
+  }
+};
+
+// Live Preview Renderer - Shows different layouts in the main preview
+function LivePreviewRenderer({ projectData, layoutPreview }) {
+  const colors = projectData.colors;
+  const heroStyle = layoutPreview?.heroStyle || 'standard';
+  const contentStyle = layoutPreview?.contentStyle || 'balanced';
+
+  // Render hero section based on style
+  const renderHero = () => {
+    switch (heroStyle) {
+      case 'full':
+      case 'dynamic':
+      case 'elegant':
+        // Full-width hero with centered content
+        return (
+          <div style={{
+            ...livePreviewStyles.heroFull,
+            background: `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`
+          }}>
+            <h2 style={livePreviewStyles.heroTitle}>{projectData.businessName || 'Your Business'}</h2>
+            <p style={livePreviewStyles.heroSub}>{projectData.tagline || 'Your tagline goes here'}</p>
+            <button style={{...livePreviewStyles.heroCta, background: '#fff', color: colors.primary}}>
+              {projectData.primaryCTA === 'book' ? 'Book Now' :
+               projectData.primaryCTA === 'call' ? 'Call Us' :
+               projectData.primaryCTA === 'buy' ? 'Shop Now' : 'Get Started'}
+            </button>
+          </div>
+        );
+
+      case 'split':
+      case 'clean':
+        // Split hero with image on right
+        return (
+          <div style={livePreviewStyles.heroSplit}>
+            <div style={livePreviewStyles.heroSplitLeft}>
+              <h2 style={{...livePreviewStyles.heroTitle, textAlign: 'left', fontSize: '16px'}}>{projectData.businessName || 'Your Business'}</h2>
+              <p style={{...livePreviewStyles.heroSub, textAlign: 'left', fontSize: '10px'}}>{projectData.tagline || 'Your tagline'}</p>
+              <button style={{...livePreviewStyles.heroCtaSmall, background: colors.primary}}>
+                {projectData.primaryCTA === 'book' ? 'Book' : 'Learn More'}
+              </button>
+            </div>
+            <div style={{
+              ...livePreviewStyles.heroSplitRight,
+              background: `linear-gradient(135deg, ${colors.primary}40, ${colors.secondary}60)`
+            }}>
+              <div style={livePreviewStyles.heroImagePlaceholder}>📷</div>
+            </div>
+          </div>
+        );
+
+      case 'minimal':
+      case 'corporate':
+      case 'professional':
+        // Minimal hero with nav emphasis
+        return (
+          <div style={livePreviewStyles.heroMinimal}>
+            <div style={{...livePreviewStyles.navBar, background: colors.primary}}>
+              <span style={livePreviewStyles.navLogo}>{projectData.businessName || 'Brand'}</span>
+              <div style={livePreviewStyles.navLinks}>
+                {projectData.selectedPages.slice(0, 3).map(p => (
+                  <span key={p} style={livePreviewStyles.navLink}>{p}</span>
+                ))}
+              </div>
+            </div>
+            <div style={livePreviewStyles.heroMinimalContent}>
+              <h2 style={{...livePreviewStyles.heroTitle, fontSize: '14px'}}>{projectData.businessName || 'Your Business'}</h2>
+              <p style={{...livePreviewStyles.heroSub, fontSize: '9px'}}>{projectData.tagline || 'Your tagline'}</p>
+              <button style={{...livePreviewStyles.heroCtaSmall, background: colors.primary}}>Contact Us</button>
+            </div>
+          </div>
+        );
+
+      case 'gallery':
+      case 'portfolio':
+        // Gallery-style hero
+        return (
+          <div style={livePreviewStyles.heroGallery}>
+            <div style={{...livePreviewStyles.navBarSimple, borderBottom: `2px solid ${colors.primary}`}}>
+              <span style={{...livePreviewStyles.navLogo, color: colors.primary}}>{projectData.businessName || 'Brand'}</span>
+            </div>
+            <div style={livePreviewStyles.galleryGrid}>
+              <div style={{...livePreviewStyles.galleryItem, background: `${colors.primary}30`}} />
+              <div style={{...livePreviewStyles.galleryItem, background: `${colors.secondary}30`}} />
+              <div style={{...livePreviewStyles.galleryItem, background: `${colors.accent}30`}} />
+              <div style={{...livePreviewStyles.galleryItem, background: `${colors.primary}20`}} />
+            </div>
+          </div>
+        );
+
+      default:
+        // Standard hero (default)
+        return (
+          <>
+            <div style={{...livePreviewStyles.navBarDefault, background: colors.primary}}>
+              <span style={livePreviewStyles.navLogoSmall}>{projectData.businessName || 'Brand'}</span>
+              <div style={livePreviewStyles.navLinksSmall}>
+                {projectData.selectedPages.slice(0, 4).map(p => (
+                  <span key={p} style={livePreviewStyles.navLinkSmall}>{p}</span>
+                ))}
+              </div>
+            </div>
+            <div style={{
+              ...livePreviewStyles.heroDefault,
+              background: `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`
+            }}>
+              <h2 style={livePreviewStyles.heroTitle}>{projectData.businessName || 'Your Business'}</h2>
+              <p style={livePreviewStyles.heroSub}>{projectData.tagline || 'Your tagline goes here'}</p>
+              <button style={{...livePreviewStyles.heroCta, background: '#fff', color: colors.primary}}>
+                Get Started
+              </button>
+            </div>
+          </>
+        );
+    }
+  };
+
+  // Render content section based on style
+  const renderContent = () => {
+    switch (contentStyle) {
+      case 'services':
+      case 'features':
+      case 'benefits':
+        return (
+          <div style={livePreviewStyles.contentGrid}>
+            {[1, 2, 3].map(i => (
+              <div key={i} style={{...livePreviewStyles.serviceCard, borderTop: `3px solid ${colors.accent}`}}>
+                <div style={{...livePreviewStyles.cardIcon, background: `${colors.primary}20`, color: colors.primary}}>✦</div>
+                <div style={livePreviewStyles.cardLines}>
+                  <div style={livePreviewStyles.cardLine} />
+                  <div style={{...livePreviewStyles.cardLine, width: '60%'}} />
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+
+      case 'testimonials':
+      case 'trust':
+        return (
+          <div style={livePreviewStyles.contentTestimonials}>
+            <div style={livePreviewStyles.testimonialCard}>
+              <div style={livePreviewStyles.testimonialQuote}>"</div>
+              <div style={livePreviewStyles.testimonialLines}>
+                <div style={livePreviewStyles.testimonialLine} />
+                <div style={{...livePreviewStyles.testimonialLine, width: '80%'}} />
+              </div>
+              <div style={livePreviewStyles.testimonialAuthor}>
+                <div style={{...livePreviewStyles.testimonialAvatar, background: colors.primary}} />
+                <div style={livePreviewStyles.testimonialName} />
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'schedule':
+      case 'menu':
+        return (
+          <div style={livePreviewStyles.contentList}>
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} style={livePreviewStyles.listItem}>
+                <div style={{...livePreviewStyles.listDot, background: colors.accent}} />
+                <div style={livePreviewStyles.listText} />
+                <div style={{...livePreviewStyles.listPrice, color: colors.primary}}>$$</div>
+              </div>
+            ))}
+          </div>
+        );
+
+      default:
+        return (
+          <div style={livePreviewStyles.contentDefault}>
+            <div style={livePreviewStyles.contentCards}>
+              {[1, 2, 3].map(i => (
+                <div key={i} style={{...livePreviewStyles.defaultCard, borderTop: `3px solid ${colors.accent}`}}>
+                  <div style={{...livePreviewStyles.cardIcon, background: `${colors.primary}20`, color: colors.primary}}>✦</div>
+                  <div style={livePreviewStyles.cardLines}>
+                    <div style={livePreviewStyles.cardLine} />
+                    <div style={{...livePreviewStyles.cardLine, width: '60%'}} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div style={livePreviewStyles.container}>
+      {renderHero()}
+      {renderContent()}
+    </div>
+  );
+}
+
+// Styles for Live Preview
+const livePreviewStyles = {
+  container: {
+    width: '100%',
+    height: '100%',
+    background: '#fff',
+    borderRadius: '4px',
+    overflow: 'hidden'
+  },
+  layoutBadge: {
+    padding: '3px 8px',
+    background: 'rgba(34, 197, 94, 0.15)',
+    borderRadius: '4px',
+    fontSize: '10px',
+    color: '#22c55e',
+    marginLeft: '8px'
+  },
+  // Hero Full
+  heroFull: {
+    height: '100px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '12px'
+  },
+  heroTitle: {
+    fontSize: '14px',
+    fontWeight: '700',
+    color: '#fff',
+    margin: '0 0 4px 0',
+    textAlign: 'center'
+  },
+  heroSub: {
+    fontSize: '9px',
+    color: 'rgba(255,255,255,0.8)',
+    margin: '0 0 8px 0',
+    textAlign: 'center'
+  },
+  heroCta: {
+    padding: '4px 12px',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '8px',
+    fontWeight: '600',
+    cursor: 'pointer'
+  },
+  heroCtaSmall: {
+    padding: '3px 8px',
+    border: 'none',
+    borderRadius: '3px',
+    fontSize: '7px',
+    fontWeight: '600',
+    color: '#fff',
+    cursor: 'pointer'
+  },
+  // Hero Split
+  heroSplit: {
+    height: '100px',
+    display: 'flex'
+  },
+  heroSplitLeft: {
+    flex: 1,
+    padding: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    background: '#f8f9fa'
+  },
+  heroSplitRight: {
+    width: '45%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  heroImagePlaceholder: {
+    fontSize: '24px',
+    opacity: 0.5
+  },
+  // Hero Minimal
+  heroMinimal: {
+    height: '100px'
+  },
+  navBar: {
+    height: '24px',
+    padding: '0 10px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  navBarSimple: {
+    height: '24px',
+    padding: '0 10px',
+    display: 'flex',
+    alignItems: 'center',
+    background: '#fff'
+  },
+  navBarDefault: {
+    height: '20px',
+    padding: '0 8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  navLogo: {
+    fontSize: '8px',
+    fontWeight: '700',
+    color: '#fff'
+  },
+  navLogoSmall: {
+    fontSize: '7px',
+    fontWeight: '700',
+    color: '#fff'
+  },
+  navLinks: {
+    display: 'flex',
+    gap: '8px'
+  },
+  navLinksSmall: {
+    display: 'flex',
+    gap: '6px'
+  },
+  navLink: {
+    fontSize: '6px',
+    color: 'rgba(255,255,255,0.8)'
+  },
+  navLinkSmall: {
+    fontSize: '5px',
+    color: 'rgba(255,255,255,0.7)',
+    textTransform: 'capitalize'
+  },
+  heroMinimalContent: {
+    height: '76px',
+    padding: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: '#f8f9fa'
+  },
+  // Hero Gallery
+  heroGallery: {
+    height: '100px'
+  },
+  galleryGrid: {
+    height: '76px',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '2px',
+    padding: '4px'
+  },
+  galleryItem: {
+    borderRadius: '2px'
+  },
+  // Hero Default
+  heroDefault: {
+    height: '80px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '8px'
+  },
+  // Content sections
+  contentGrid: {
+    padding: '8px',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '6px'
+  },
+  serviceCard: {
+    padding: '8px',
+    background: '#f8f9fa',
+    borderRadius: '4px'
+  },
+  cardIcon: {
+    width: '16px',
+    height: '16px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '8px',
+    marginBottom: '4px'
+  },
+  cardLines: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px'
+  },
+  cardLine: {
+    width: '100%',
+    height: '3px',
+    background: '#e5e7eb',
+    borderRadius: '1px'
+  },
+  // Testimonials
+  contentTestimonials: {
+    padding: '8px',
+    display: 'flex',
+    justifyContent: 'center'
+  },
+  testimonialCard: {
+    width: '80%',
+    padding: '8px',
+    background: '#f8f9fa',
+    borderRadius: '4px',
+    textAlign: 'center'
+  },
+  testimonialQuote: {
+    fontSize: '14px',
+    color: '#ccc',
+    marginBottom: '4px'
+  },
+  testimonialLines: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '2px',
+    marginBottom: '6px'
+  },
+  testimonialLine: {
+    width: '90%',
+    height: '3px',
+    background: '#e5e7eb',
+    borderRadius: '1px'
+  },
+  testimonialAuthor: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '4px'
+  },
+  testimonialAvatar: {
+    width: '12px',
+    height: '12px',
+    borderRadius: '50%'
+  },
+  testimonialName: {
+    width: '30px',
+    height: '3px',
+    background: '#e5e7eb',
+    borderRadius: '1px'
+  },
+  // List content
+  contentList: {
+    padding: '8px'
+  },
+  listItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '4px 0',
+    borderBottom: '1px solid #f0f0f0'
+  },
+  listDot: {
+    width: '4px',
+    height: '4px',
+    borderRadius: '50%'
+  },
+  listText: {
+    flex: 1,
+    height: '3px',
+    background: '#e5e7eb',
+    borderRadius: '1px'
+  },
+  listPrice: {
+    fontSize: '6px',
+    fontWeight: '600'
+  },
+  // Default content
+  contentDefault: {
+    padding: '8px'
+  },
+  contentCards: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '6px'
+  },
+  defaultCard: {
+    padding: '8px',
+    background: '#f8f9fa',
+    borderRadius: '4px'
+  }
+};
+
 // Styles for P1 Components
 const wizardStyles = {
   breadcrumbContainer: {
@@ -3966,6 +5045,38 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
             </div>
           </CollapsibleSection>
 
+          {/* SECTION 3.5: Layout Style - Visual Layout Selection */}
+          <CollapsibleSection
+            title="Layout Style"
+            icon="📐"
+            defaultOpen={true}
+            badge={projectData.layoutStyleId ? getLayoutsForIndustry(projectData.industryKey).find(l => l.id === projectData.layoutStyleId)?.name : 'Choose a style'}
+            tooltip="Choose how your website sections are arranged"
+          >
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>
+                Select a Layout
+                <span style={p1Styles.tooltipIcon} title="Different layouts emphasize different content. Pick what works best for your business.">ⓘ</span>
+              </label>
+              <p style={customizeStyles.fieldHint}>
+                {projectData.industryKey
+                  ? `Layouts optimized for ${projectData.industry?.name || 'your industry'}`
+                  : 'General layouts that work for any business'}
+              </p>
+              <LayoutStyleSelector
+                industryKey={projectData.industryKey}
+                selectedLayout={projectData.layoutStyleId}
+                onSelectLayout={(layoutId, previewConfig) => {
+                  updateProject({
+                    layoutStyleId: layoutId,
+                    layoutStylePreview: previewConfig
+                  });
+                }}
+                colors={projectData.colors}
+              />
+            </div>
+          </CollapsibleSection>
+
           {/* SECTION 4: Pages */}
           <CollapsibleSection
             title="Website Pages"
@@ -4167,10 +5278,15 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
 
         </div>
 
-        {/* RIGHT: Live Preview */}
+        {/* RIGHT: Live Preview - Updates based on layout selection */}
         <div style={styles.previewContainer}>
           <div style={styles.previewHeader}>
             <span>Live Preview</span>
+            {projectData.layoutStyleId && (
+              <span style={livePreviewStyles.layoutBadge}>
+                {getLayoutsForIndustry(projectData.industryKey).find(l => l.id === projectData.layoutStyleId)?.name}
+              </span>
+            )}
             <div style={styles.previewDots}>
               <span style={styles.dot} />
               <span style={styles.dot} />
@@ -4178,35 +5294,11 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
             </div>
           </div>
           <div style={styles.previewFrame}>
-            {/* Mini Website Preview */}
-            <div style={{...styles.previewNav, background: projectData.colors.primary}}>
-              <span style={styles.previewLogo}>{projectData.businessName || 'Your Brand'}</span>
-              <div style={styles.previewNavLinks}>
-                {projectData.selectedPages.slice(0, 4).map(p => (
-                  <span key={p} style={styles.previewNavLink}>{p}</span>
-                ))}
-              </div>
-            </div>
-            <div style={{...styles.previewHero, background: `linear-gradient(135deg, ${projectData.colors.primary}, ${projectData.colors.secondary})`}}>
-              <h2 style={styles.previewHeroTitle}>{projectData.businessName || 'Your Business'}</h2>
-              <p style={styles.previewHeroSub}>{projectData.tagline || 'Your tagline goes here'}</p>
-              <button style={{...styles.previewCta, background: '#fff', color: projectData.colors.primary}}>
-                Get Started
-              </button>
-            </div>
-            <div style={styles.previewContent}>
-              <div style={styles.previewCards}>
-                {[1, 2, 3].map(i => (
-                  <div key={i} style={{...styles.previewCard, borderTop: `3px solid ${projectData.colors.accent}`}}>
-                    <div style={{...styles.previewCardIcon, background: `${projectData.colors.primary}20`, color: projectData.colors.primary}}>✦</div>
-                    <div style={styles.previewCardLines}>
-                      <div style={styles.previewLine} />
-                      <div style={{...styles.previewLine, width: '60%'}} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Dynamic Preview based on layout selection */}
+            <LivePreviewRenderer
+              projectData={projectData}
+              layoutPreview={projectData.layoutStylePreview}
+            />
           </div>
         </div>
       </div>
