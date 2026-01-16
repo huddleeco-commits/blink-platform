@@ -6,6 +6,7 @@
 // Flow screens
 export { ChoosePathStep } from './ChoosePathStep.jsx';
 export { QuickStep } from './QuickStep.jsx';
+export { OrchestratorStep } from './OrchestratorStep.jsx';
 
 // Error screens
 export { ErrorStep } from './ErrorStep.jsx';
