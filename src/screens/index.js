@@ -15,3 +15,17 @@ export { DeployErrorStep } from './DeployErrorStep.jsx';
 export { GeneratingStep } from './GeneratingStep.jsx';
 export { DeployingStep } from './DeployingStep.jsx';
 export { DeployCompleteStep } from './DeployCompleteStep.jsx';
+
+// Complete screens
+export { CompleteStep } from './CompleteStep.jsx';
+export { ToolCompleteScreen } from './ToolCompleteScreen.jsx';
+
+// Choice and customization screens
+export { ChoiceScreen } from './ChoiceScreen.jsx';
+export { SiteCustomizationScreen } from './SiteCustomizationScreen.jsx';
+export { ToolCustomizationScreen } from './ToolCustomizationScreen.jsx';
+
+// Tools screens
+export { RecommendedToolsScreen } from './RecommendedToolsScreen.jsx';
+export { ToolSuiteBuilderScreen } from './ToolSuiteBuilderScreen.jsx';
+export { SuiteCompleteScreen } from './SuiteCompleteScreen.jsx';
