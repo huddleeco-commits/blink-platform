@@ -1,19 +1,46 @@
 /**
  * Module Assembler Backend Server
- * 
+ *
  * Express server that provides API endpoints for the assembler UI
  * and executes the actual assembly script.
- * 
+ *
  * Save to: C:\Users\huddl\OneDrive\Desktop\module-library\module-assembler-ui\server.cjs
  */
 
 require('dotenv').config();
+
+// Initialize Sentry FIRST - before any other code
+const {
+  initSentry,
+  sentryRequestHandler,
+  sentryErrorHandler,
+  captureException,
+  addBreadcrumb
+} = require('./lib/sentry.cjs');
+
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { body, validationResult } = require('express-validator');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+// ===========================================
+// EXTRACTED UTILITIES
+// ===========================================
+const {
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIREMENTS,
+  validatePasswordStrength,
+  toComponentName,
+  toPageFileName,
+  toRoutePath,
+  toNavLabel,
+  copyDirectorySync
+} = require('./lib/utils/index.cjs');
 
 // Validation error handler middleware
 const handleValidationErrors = (req, res, next) => {
@@ -35,12 +62,13 @@ async function initializeServices() {
   try {
     // Only initialize DB if DATABASE_URL is set
     if (process.env.DATABASE_URL) {
-      db = require('./database/db.js');
+      db = require('./database/db.cjs');
       await db.initializeDatabase();
       console.log('   ✅ Database initialized');
 
-      adminRoutes = require('./routes/admin-routes.cjs');
-      console.log('   ✅ Admin routes loaded');
+      // Use the full blink-admin routes that match the frontend
+      adminRoutes = require('../backend/blink-admin/routes/admin');
+      console.log('   ✅ Admin routes loaded (blink-admin)');
     } else {
       console.log('   ⚠️ DATABASE_URL not set - admin features disabled');
     }
@@ -62,33 +90,108 @@ async function extractPdfText(base64Data) {
   }
 }
 
+// Dynamic video cache (in-memory, resets on server restart)
+const videoCache = new Map();
+
+// Fetch video from Pexels API based on search query
+async function fetchPexelsVideo(searchQuery) {
+  const apiKey = process.env.PEXELS_API_KEY;
+  if (!apiKey || apiKey === 'your_pexels_api_key_here') {
+    console.log('   ⚠️ Pexels API key not configured');
+    return null;
+  }
+
+  // Check cache first
+  const cacheKey = searchQuery.toLowerCase().trim();
+  if (videoCache.has(cacheKey)) {
+    console.log(`   📹 Using cached video for: ${searchQuery}`);
+    return videoCache.get(cacheKey);
+  }
+
+  try {
+    console.log(`   🔍 Searching Pexels for video: ${searchQuery}`);
+    const response = await fetch(
+      `https://api.pexels.com/videos/search?query=${encodeURIComponent(searchQuery)}&per_page=5&orientation=landscape`,
+      {
+        headers: {
+          'Authorization': apiKey
+        }
+      }
+    );
+
+    if (!response.ok) {
+      console.log(`   ⚠️ Pexels API error: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data.videos && data.videos.length > 0) {
+      // Find HD or higher quality video file
+      const video = data.videos[0];
+      const hdFile = video.video_files.find(f => f.quality === 'hd' || f.quality === 'uhd' || f.height >= 720);
+      const videoUrl = hdFile ? hdFile.link : video.video_files[0].link;
+
+      console.log(`   ✅ Found Pexels video: ${videoUrl.substring(0, 60)}...`);
+
+      // Cache the result
+      videoCache.set(cacheKey, videoUrl);
+
+      return videoUrl;
+    }
+
+    console.log(`   ⚠️ No Pexels videos found for: ${searchQuery}`);
+    return null;
+  } catch (err) {
+    console.log(`   ⚠️ Pexels API fetch error: ${err.message}`);
+    return null;
+  }
+}
+
+// Get video URL for an industry - tries dynamic fetch first, falls back to hardcoded
+async function getIndustryVideo(industryName, businessName = '') {
+  // Build search terms based on industry and business name
+  const searchTerms = [];
+
+  // Add industry-specific terms
+  const industryLower = industryName.toLowerCase();
+  if (industryLower.includes('pizza')) searchTerms.push('pizza making', 'pizzeria');
+  else if (industryLower.includes('restaurant') || industryLower.includes('food')) searchTerms.push('restaurant cooking', 'chef cooking');
+  else if (industryLower.includes('spa') || industryLower.includes('wellness')) searchTerms.push('spa massage', 'wellness relaxation');
+  else if (industryLower.includes('fitness') || industryLower.includes('gym')) searchTerms.push('gym workout', 'fitness training');
+  else if (industryLower.includes('salon') || industryLower.includes('hair')) searchTerms.push('hair salon', 'hairstylist');
+  else if (industryLower.includes('plumb')) searchTerms.push('plumber working', 'plumbing repair');
+  else if (industryLower.includes('electric')) searchTerms.push('electrician working', 'electrical work');
+  else if (industryLower.includes('construct')) searchTerms.push('construction site', 'building construction');
+  else if (industryLower.includes('dental') || industryLower.includes('dentist')) searchTerms.push('dental office', 'dentist');
+  else if (industryLower.includes('landscap') || industryLower.includes('lawn')) searchTerms.push('landscaping garden', 'lawn care');
+  else if (industryLower.includes('clean')) searchTerms.push('cleaning service', 'house cleaning');
+  else if (industryLower.includes('auto') || industryLower.includes('mechanic')) searchTerms.push('auto repair', 'mechanic working');
+  else if (industryLower.includes('pet') || industryLower.includes('vet')) searchTerms.push('pet grooming', 'veterinary');
+  else if (industryLower.includes('hotel') || industryLower.includes('hospitality')) searchTerms.push('luxury hotel', 'hotel lobby');
+  else if (industryLower.includes('real estate')) searchTerms.push('luxury home', 'real estate');
+  else if (industryLower.includes('law') || industryLower.includes('attorney')) searchTerms.push('law office', 'lawyer');
+  else if (industryLower.includes('cafe') || industryLower.includes('coffee')) searchTerms.push('coffee shop', 'barista coffee');
+  else if (industryLower.includes('bakery') || industryLower.includes('pastry')) searchTerms.push('bakery', 'baking bread');
+  else if (industryLower.includes('tattoo')) searchTerms.push('tattoo artist', 'tattoo studio');
+  else if (industryLower.includes('barber')) searchTerms.push('barber shop', 'barber haircut');
+  else searchTerms.push(industryName); // Use industry name as search term
+
+  // Try to fetch from Pexels
+  for (const term of searchTerms) {
+    const videoUrl = await fetchPexelsVideo(term);
+    if (videoUrl) return videoUrl;
+  }
+
+  // Fallback: return null (will use hardcoded or no video)
+  return null;
+}
+
 // Load prompt configs
 const PROMPTS_DIR = path.join(__dirname, '..', 'prompts');
 const INDUSTRIES = JSON.parse(fs.readFileSync(path.join(PROMPTS_DIR, 'industries.json'), 'utf-8'));
 const LAYOUTS = JSON.parse(fs.readFileSync(path.join(PROMPTS_DIR, 'layouts.json'), 'utf-8'));
 const EFFECTS = JSON.parse(fs.readFileSync(path.join(PROMPTS_DIR, 'effects.json'), 'utf-8'));
 const SECTIONS = JSON.parse(fs.readFileSync(path.join(PROMPTS_DIR, 'sections.json'), 'utf-8'));
-
-// ============================================
-// UTILITY: Convert page ID to valid JS component name
-// "franchise-opportunities" → "FranchiseOpportunities"
-// ============================================
-function toComponentName(pageId) {
-  return pageId
-    .split('-')
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join('');
-}
-
-function toNavLabel(pageId) {
-  return pageId
-    .split('-')
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(' ');
-}
-
-// Homepage templates available as fallback if needed
-// const { HOMEPAGE_TEMPLATES, getTemplateForIndustry, getContentPromptForTemplate } = require('../templates/homepage-templates.cjs');
 
 // ============================================
 // INDUSTRY DETECTION - Keyword-based matching
@@ -110,7 +213,8 @@ function detectIndustryFromDescription(description) {
     { industry: 'chiropractic', keywords: ['chiropract', 'physical therapy', 'pt clinic', 'rehab center'] },
     { industry: 'spa-salon', keywords: ['spa', 'salon', 'beauty', 'nail', 'hair stylist', 'esthetician', 'massage therapy'] },
     
-    // Food & Beverage
+    // Food & Beverage (pizza FIRST - more specific than restaurant)
+    { industry: 'pizza', keywords: ['pizza', 'pizzeria', 'pie shop', 'slice'] },
     { industry: 'restaurant', keywords: ['restaurant', 'dining', 'bistro', 'eatery', 'fine dining', 'steakhouse', 'seafood', 'bbq', 'barbecue', 'grill'] },
     { industry: 'cafe', keywords: ['coffee', 'cafe', 'espresso', 'tea house', 'roaster'] },
     { industry: 'bar', keywords: ['bar', 'nightclub', 'lounge', 'pub', 'brewery', 'cocktail', 'wine bar'] },
@@ -217,6 +321,12 @@ function buildPrompt(industryKey, layoutKey, selectedEffects) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Initialize Sentry error tracking
+initSentry(app);
+
+// Sentry request handler - MUST be first middleware
+app.use(sentryRequestHandler());
+
 // Paths - Environment-based with sensible defaults
 // MODULE_LIBRARY: parent of module-assembler-ui (this file is in module-assembler-ui/)
 // GENERATED_PROJECTS: sibling to module-library
@@ -239,8 +349,59 @@ if (!fs.existsSync(GENERATED_PROJECTS)) {
   console.log(`📁 Created output directory: ${GENERATED_PROJECTS}`);
 }
 
-// Middleware
-app.use(cors());
+// ===========================================
+// SECURITY MIDDLEWARE
+// ===========================================
+
+// Helmet security headers - MUST be early in middleware chain
+app.use(helmet({
+  // Content Security Policy
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // React needs these
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:", "blob:"],
+      mediaSrc: ["'self'", "https://player.vimeo.com", "https://*.pexels.com"],
+      connectSrc: ["'self'", "https://api.anthropic.com", "https://api.pexels.com", "https://*.sentry.io"],
+      frameSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+    },
+  },
+  // Cross-Origin settings
+  crossOriginEmbedderPolicy: false, // Needed for external images/videos
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  // Strict Transport Security (HSTS)
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true
+  },
+  // Prevent clickjacking
+  frameguard: { action: 'deny' },
+  // Prevent MIME type sniffing
+  noSniff: true,
+  // XSS protection
+  xssFilter: true,
+  // Referrer Policy
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  // Don't advertise Express
+  hidePoweredBy: true
+}));
+
+// CORS configuration
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production'
+    ? [process.env.FRONTEND_URL, /\.be1st\.io$/]
+    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+// Body parsing
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -462,6 +623,67 @@ app.post('/api/auth/validate-dev',
   }
 );
 
+// Admin login endpoint (JWT-based)
+app.post('/api/auth/login',
+  body('email').isEmail().withMessage('Valid email is required'),
+  body('password').isString().notEmpty().withMessage('Password is required'),
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const { email, password } = req.body;
+
+      if (!db) {
+        return res.status(500).json({ success: false, error: 'Database not available' });
+      }
+
+      // Find user by email
+      const result = await db.query(
+        'SELECT id, email, password_hash, name, subscription_tier, is_admin FROM users WHERE email = $1',
+        [email]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(401).json({ success: false, error: 'Invalid credentials' });
+      }
+
+      const user = result.rows[0];
+
+      // Verify password
+      const validPassword = await bcrypt.compare(password, user.password_hash);
+      if (!validPassword) {
+        return res.status(401).json({ success: false, error: 'Invalid credentials' });
+      }
+
+      // Check if admin
+      if (!user.is_admin) {
+        return res.status(403).json({ success: false, error: 'Admin access required' });
+      }
+
+      // Generate JWT - use is_admin (snake_case) to match auth middleware
+      const token = jwt.sign(
+        { id: user.id, email: user.email, is_admin: user.is_admin },
+        process.env.JWT_SECRET || 'blink-default-secret',
+        { expiresIn: '24h' }
+      );
+
+      res.json({
+        success: true,
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          subscription_tier: user.subscription_tier,
+          is_admin: user.is_admin
+        }
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(500).json({ success: false, error: 'Login failed' });
+    }
+  }
+);
+
 // Get bundles
 app.get('/api/bundles', (req, res) => {
   res.json({ success: true, bundles: BUNDLES });
@@ -595,7 +817,9 @@ app.get('/api/projects', (req, res) => {
         if (fs.existsSync(manifestPath)) {
           try {
             manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-          } catch (e) {}
+          } catch (e) {
+            console.warn(`   ⚠️ Failed to parse manifest for ${d.name}:`, e.message);
+          }
         }
         
         return {
@@ -707,6 +931,378 @@ function generateBrainJson(projectName, industryKey, industryConfig) {
       accentColor: colors.accent || '#8b5cf6'
     }
   }, null, 2);
+}
+
+// ============================================
+// TOOL HTML GENERATOR
+// ============================================
+
+function generateToolHtml(payload) {
+  const { name, toolTemplate, toolCategory, toolFeatures = [], toolFields = [], theme = {} } = payload;
+  const colors = theme.colors || { primary: '#3b82f6', accent: '#8b5cf6', background: '#f8fafc' };
+
+  // Generate form fields HTML
+  const fieldsHtml = toolFields.map(field => {
+    const fieldId = field.name.toLowerCase().replace(/\s+/g, '-');
+
+    if (field.type === 'text') {
+      return `
+        <div class="form-group">
+          <label for="${fieldId}">${field.label}</label>
+          <input type="text" id="${fieldId}" name="${field.name}" placeholder="${field.placeholder || ''}" ${field.required ? 'required' : ''}>
+        </div>`;
+    }
+
+    if (field.type === 'number') {
+      return `
+        <div class="form-group">
+          <label for="${fieldId}">${field.label}</label>
+          <input type="number" id="${fieldId}" name="${field.name}" placeholder="${field.placeholder || '0'}" step="${field.step || '1'}" ${field.required ? 'required' : ''}>
+        </div>`;
+    }
+
+    if (field.type === 'textarea') {
+      return `
+        <div class="form-group">
+          <label for="${fieldId}">${field.label}</label>
+          <textarea id="${fieldId}" name="${field.name}" rows="4" placeholder="${field.placeholder || ''}" ${field.required ? 'required' : ''}></textarea>
+        </div>`;
+    }
+
+    if (field.type === 'select' && field.options) {
+      const optionsHtml = field.options.map(opt => `<option value="${opt}">${opt}</option>`).join('');
+      return `
+        <div class="form-group">
+          <label for="${fieldId}">${field.label}</label>
+          <select id="${fieldId}" name="${field.name}" ${field.required ? 'required' : ''}>
+            <option value="">Select...</option>
+            ${optionsHtml}
+          </select>
+        </div>`;
+    }
+
+    if (field.type === 'date') {
+      return `
+        <div class="form-group">
+          <label for="${fieldId}">${field.label}</label>
+          <input type="date" id="${fieldId}" name="${field.name}" ${field.required ? 'required' : ''}>
+        </div>`;
+    }
+
+    if (field.type === 'line-items') {
+      return `
+        <div class="form-group line-items">
+          <label>${field.label}</label>
+          <div id="${fieldId}-container" class="line-items-container">
+            <div class="line-item">
+              <input type="text" placeholder="Description" class="item-desc">
+              <input type="number" placeholder="Qty" class="item-qty" value="1" min="1">
+              <input type="number" placeholder="Price" class="item-price" step="0.01">
+              <button type="button" class="remove-item" onclick="removeLineItem(this)">×</button>
+            </div>
+          </div>
+          <button type="button" class="add-item-btn" onclick="addLineItem('${fieldId}-container')">+ Add Item</button>
+        </div>`;
+    }
+
+    // Default to text input
+    return `
+      <div class="form-group">
+        <label for="${fieldId}">${field.label}</label>
+        <input type="text" id="${fieldId}" name="${field.name}" ${field.required ? 'required' : ''}>
+      </div>`;
+  }).join('\n');
+
+  // Feature badges
+  const featureBadges = toolFeatures.map(f =>
+    `<span class="feature-badge">${f.replace(/-/g, ' ')}</span>`
+  ).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${name}</title>
+  <style>
+    :root {
+      --primary: ${colors.primary};
+      --accent: ${colors.accent};
+      --background: ${colors.background};
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--background);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    h1 {
+      color: var(--primary);
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .tool-category {
+      color: #64748b;
+      font-size: 0.875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .features {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+
+    .feature-badge {
+      background: var(--accent);
+      color: white;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      text-transform: capitalize;
+    }
+
+    .tool-card {
+      background: white;
+      border-radius: 1rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      padding: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 0.5rem;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 2px solid #e5e7eb;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    .line-items-container {
+      border: 2px solid #e5e7eb;
+      border-radius: 0.5rem;
+      padding: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .line-item {
+      display: grid;
+      grid-template-columns: 2fr 80px 100px 40px;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .line-item input {
+      padding: 0.5rem;
+    }
+
+    .remove-item {
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 0.25rem;
+      cursor: pointer;
+      font-size: 1.25rem;
+    }
+
+    .add-item-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 0.25rem;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 1rem 2rem;
+      border-radius: 0.5rem;
+      font-size: 1.125rem;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity 0.2s;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+    }
+
+    .result-section {
+      display: none;
+      background: #f0fdf4;
+      border: 2px solid #22c55e;
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+      margin-top: 1.5rem;
+    }
+
+    .result-section.visible {
+      display: block;
+    }
+
+    .result-section h3 {
+      color: #16a34a;
+      margin-bottom: 1rem;
+    }
+
+    #result-content {
+      background: white;
+      padding: 1rem;
+      border-radius: 0.25rem;
+      font-family: monospace;
+      white-space: pre-wrap;
+    }
+
+    footer {
+      text-align: center;
+      color: #9ca3af;
+      font-size: 0.75rem;
+      margin-top: 2rem;
+    }
+
+    @media (max-width: 640px) {
+      .line-item {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 1.75rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <p class="tool-category">${toolCategory}</p>
+      <h1>${name}</h1>
+      <div class="features">
+        ${featureBadges}
+      </div>
+    </header>
+
+    <div class="tool-card">
+      <form id="tool-form">
+        ${fieldsHtml}
+
+        <button type="submit" class="btn-primary">Generate</button>
+      </form>
+
+      <div id="result" class="result-section">
+        <h3>Result</h3>
+        <div id="result-content"></div>
+      </div>
+    </div>
+
+    <footer>
+      <p>Generated by Blink | Powered by AI</p>
+    </footer>
+  </div>
+
+  <script>
+    // Line item management
+    function addLineItem(containerId) {
+      const container = document.getElementById(containerId);
+      const item = document.createElement('div');
+      item.className = 'line-item';
+      item.innerHTML = \`
+        <input type="text" placeholder="Description" class="item-desc">
+        <input type="number" placeholder="Qty" class="item-qty" value="1" min="1">
+        <input type="number" placeholder="Price" class="item-price" step="0.01">
+        <button type="button" class="remove-item" onclick="removeLineItem(this)">×</button>
+      \`;
+      container.appendChild(item);
+    }
+
+    function removeLineItem(btn) {
+      const container = btn.closest('.line-items-container');
+      if (container.querySelectorAll('.line-item').length > 1) {
+        btn.closest('.line-item').remove();
+      }
+    }
+
+    // Form submission
+    document.getElementById('tool-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      const formData = new FormData(this);
+      const data = {};
+
+      // Collect form data
+      formData.forEach((value, key) => {
+        data[key] = value;
+      });
+
+      // Collect line items if present
+      const lineItems = [];
+      document.querySelectorAll('.line-item').forEach(item => {
+        const desc = item.querySelector('.item-desc')?.value;
+        const qty = item.querySelector('.item-qty')?.value;
+        const price = item.querySelector('.item-price')?.value;
+        if (desc && qty && price) {
+          lineItems.push({ description: desc, quantity: parseInt(qty), price: parseFloat(price) });
+        }
+      });
+
+      if (lineItems.length > 0) {
+        data.lineItems = lineItems;
+        data.subtotal = lineItems.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+        data.total = data.subtotal;
+      }
+
+      // Display result
+      const resultSection = document.getElementById('result');
+      const resultContent = document.getElementById('result-content');
+      resultContent.textContent = JSON.stringify(data, null, 2);
+      resultSection.classList.add('visible');
+    });
+  </script>
+</body>
+</html>`;
 }
 
 function generateBrainRoutes() {
@@ -830,23 +1426,6 @@ router.get('/quick', (req, res) => {
 
 module.exports = router;
 `;
-}
-
-function copyDirectorySync(src, dest) {
-  if (!fs.existsSync(dest)) {
-    fs.mkdirSync(dest, { recursive: true });
-  }
-  const entries = fs.readdirSync(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-    if (entry.name === 'node_modules' || entry.name === '.git') continue;
-    if (entry.isDirectory()) {
-      copyDirectorySync(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
 }
 
 // ============================================
@@ -1188,7 +1767,10 @@ app.post('/api/assemble', async (req, res) => {
       if (fs.existsSync(manifestPath)) {
         try {
           manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-        } catch (e) {}
+        } catch (e) {
+          console.warn(`   ⚠️ Failed to parse project manifest:`, e.message);
+          captureException(e, { tags: { component: 'manifest-parser' } });
+        }
       }
 
       // ============================================
@@ -1326,9 +1908,15 @@ app.post('/api/assemble', async (req, res) => {
         industryKey = detectIndustryFromDescription(description.text);
       }
       industryKey = industryKey || 'saas';
-      const layoutKey = description?.layoutKey || null;
+      // Support both layoutKey and layoutStyleId (frontend sends layoutStyleId)
+      const layoutKey = description?.layoutStyleId || description?.layoutKey || null;
       const selectedEffects = description?.effects || null;
       const promptConfig = buildPrompt(industryKey, layoutKey, selectedEffects);
+
+      // Log layout selection for debugging
+      if (layoutKey) {
+        console.log(`   🎨 Using layout style: ${layoutKey} for industry: ${industryKey}`);
+      }
       
       // Save theme if provided (or create from promptConfig)
       const themeToUse = theme || (promptConfig ? {
@@ -1448,10 +2036,16 @@ body {
           if (apiKey) {
             const Anthropic = require('@anthropic-ai/sdk');
             const client = new Anthropic({ apiKey });
-            
+
+            // Cost tracking for this generation
+            let totalInputTokens = 0;
+            let totalOutputTokens = 0;
+            let totalCost = 0;
+            const MODEL_NAME = 'claude-sonnet-4-20250514';
+
             // Generate all pages in parallel for speed
             console.log(`      ⚡ Generating ${description.pages.length} pages in parallel...`);
-            
+
             const pagePromises = description.pages.map(async (pageId) => {
               const componentName = toComponentName(pageId);
               const maxRetries = 2;
@@ -1465,16 +2059,27 @@ body {
                 const isEnhanceMode = description.enhanceMode === true;
                 const existingSiteData = description.existingSite || null;
                 
-                const pagePrompt = isEnhanceMode 
-                  ? buildEnhanceModePrompt(pageId, componentName, existingSiteData, promptConfig) 
-                  : buildFreshModePrompt(pageId, componentName, otherPages, description, promptConfig);
+                const pagePrompt = isEnhanceMode
+                  ? buildEnhanceModePrompt(pageId, componentName, existingSiteData, promptConfig)
+                  : await buildFreshModePrompt(pageId, componentName, otherPages, description, promptConfig);
 
                 const pageResponse = await client.messages.create({
-                  model: 'claude-sonnet-4-20250514',
+                  model: MODEL_NAME,
                   max_tokens: 16000,
                   messages: [{ role: 'user', content: pagePrompt }]
                 });
-                
+
+                // Track API usage from response
+                if (pageResponse.usage) {
+                  const inputTokens = pageResponse.usage.input_tokens || 0;
+                  const outputTokens = pageResponse.usage.output_tokens || 0;
+                  totalInputTokens += inputTokens;
+                  totalOutputTokens += outputTokens;
+                  // Calculate cost: Claude Sonnet = $3/M input, $15/M output
+                  const pageCost = (inputTokens / 1000000) * 3.0 + (outputTokens / 1000000) * 15.0;
+                  totalCost += pageCost;
+                }
+
                 let pageCode = pageResponse.content[0].text;
                 pageCode = pageCode.replace(/^```jsx?\n?/g, '').replace(/\n?```$/g, '').trim();
                 
@@ -1514,7 +2119,32 @@ body {
             const results = await Promise.all(pagePromises);
             const successCount = results.filter(r => r.success).length;
             console.log(`      ✅ ${successCount}/${description.pages.length} pages complete`);
-            
+
+            // Log and save API cost tracking
+            if (totalCost > 0) {
+              console.log(`      💰 API Cost: $${totalCost.toFixed(4)} (${totalInputTokens} in / ${totalOutputTokens} out tokens)`);
+
+              // Save to database if available
+              if (db && db.trackApiUsage) {
+                try {
+                  await db.trackApiUsage({
+                    projectId: null, // No project ID tracked yet
+                    endpoint: 'claude-api',
+                    operation: 'page-generation',
+                    tokensUsed: totalInputTokens + totalOutputTokens,
+                    inputTokens: totalInputTokens,
+                    outputTokens: totalOutputTokens,
+                    cost: totalCost,
+                    durationMs: Date.now() - startTime,
+                    responseStatus: 200
+                  });
+                  console.log(`      ✅ Cost tracked in database`);
+                } catch (dbErr) {
+                  console.error(`      ⚠️ Failed to track cost: ${dbErr.message}`);
+                }
+              }
+            }
+
             // Generate updated App.jsx with routes to new pages
             const appJsx = buildAppJsx(name, description.pages, promptConfig, sanitizedIndustry);
             fs.writeFileSync(path.join(frontendSrcPath, 'App.jsx'), appJsx);
@@ -1585,6 +2215,697 @@ console.log(`   ⏱️ Total generation time: ${((Date.now() - startTime) / 1000
 // ============================================
 // PROMPT BUILDERS - Use JSON Config
 // ============================================
+
+/**
+ * Build smart context guide for AI to infer realistic content from minimal input
+ * This helps Claude generate specific, realistic content even when user provides minimal details
+ */
+function buildSmartContextGuide(businessInput, industryName) {
+  const input = (businessInput || '').toLowerCase();
+  const industry = (industryName || '').toLowerCase();
+
+  // Detect business type from input keywords
+  const contextHints = [];
+
+  // Restaurant/Food detection
+  if (input.includes('pizza') || input.includes('pizzeria') || industry.includes('restaurant')) {
+    contextHints.push(`
+DETECTED: PIZZA/ITALIAN RESTAURANT
+Generate these specific elements:
+- MENU: Create 15-20 actual menu items with names like "Margherita", "Meat Lovers Supreme", "Brooklyn Special"
+- PRICES: Pizzas $14-24, Appetizers $8-14, Salads $10-15, Drinks $3-5, Desserts $6-9
+- SECTIONS: Pizzas, Specialty Pizzas, Calzones, Salads, Appetizers, Drinks, Desserts
+- HOURS: Mon-Thu 11am-10pm, Fri-Sat 11am-11pm, Sun 12pm-9pm
+- FEATURES: Dine-in, Takeout, Delivery, Catering available
+- ATMOSPHERE: Family-friendly, casual Italian dining
+`);
+  }
+
+  if (input.includes('dental') || input.includes('dentist') || industry.includes('dental')) {
+    contextHints.push(`
+DETECTED: DENTAL PRACTICE
+Generate these specific elements:
+- SERVICES: General Dentistry, Cosmetic Dentistry, Teeth Whitening, Dental Implants, Invisalign, Emergency Care
+- TEAM: Create 3-4 dentist/hygienist profiles with realistic names and specialties
+- INSURANCE: "We accept most major insurance plans including Delta, Cigna, Aetna, MetLife"
+- HOURS: Mon-Fri 8am-5pm, Sat 9am-2pm (by appointment)
+- FEATURES: New patient specials, Same-day appointments, Sedation dentistry available
+- ATMOSPHERE: Modern, comfortable, family-friendly practice
+`);
+  }
+
+  if (input.includes('law') || input.includes('attorney') || input.includes('legal') || industry.includes('legal') || industry.includes('law')) {
+    contextHints.push(`
+DETECTED: LAW FIRM
+Generate these specific elements:
+- PRACTICE AREAS: Personal Injury, Family Law, Criminal Defense, Estate Planning, Business Law
+- TEAM: Create 3-5 attorney profiles with JD credentials, bar admissions, years of experience
+- STATS: "Over $50M recovered for clients", "500+ cases won", "35+ years combined experience"
+- CONSULTATION: Free initial consultation, No fee unless we win (for PI cases)
+- HOURS: Mon-Fri 9am-6pm, 24/7 for emergencies
+- ATMOSPHERE: Professional, trustworthy, client-focused
+`);
+  }
+
+  if (input.includes('gym') || input.includes('fitness') || input.includes('crossfit') || industry.includes('fitness')) {
+    contextHints.push(`
+DETECTED: FITNESS/GYM
+Generate these specific elements:
+- CLASSES: CrossFit, HIIT, Spin, Yoga, Strength Training, Boxing, Personal Training
+- MEMBERSHIP: Basic $29/mo, Premium $49/mo, VIP $79/mo with specific features for each
+- AMENITIES: Free weights, Cardio machines, Locker rooms, Showers, Sauna, Smoothie bar
+- HOURS: Mon-Fri 5am-10pm, Sat-Sun 7am-8pm
+- FEATURES: Free trial class, No contract options, Personal training available
+- ATMOSPHERE: Motivating, high-energy, supportive community
+`);
+  }
+
+  if (input.includes('salon') || input.includes('spa') || input.includes('beauty') || industry.includes('spa') || industry.includes('salon')) {
+    contextHints.push(`
+DETECTED: SALON/SPA
+Generate these specific elements:
+- SERVICES: Haircuts $35-75, Color $85-150, Highlights $120-200, Facials $75-150, Massage $80-150, Nails $25-65
+- TEAM: Create 4-6 stylist profiles with specialties and experience
+- PACKAGES: Bridal packages, Spa day packages, Monthly memberships
+- HOURS: Tue-Sat 9am-7pm, Sun-Mon closed
+- FEATURES: Online booking, Gift cards, Loyalty program
+- ATMOSPHERE: Relaxing, upscale, luxurious pampering experience
+`);
+  }
+
+  if (input.includes('plumb') || input.includes('hvac') || input.includes('electric') || industry.includes('plumber') || industry.includes('home-services')) {
+    contextHints.push(`
+DETECTED: HOME SERVICES (Plumbing/HVAC/Electrical)
+Generate these specific elements:
+- SERVICES: Emergency repairs, Installation, Maintenance, Inspections
+- PRICING: Service call $89, specific job estimates on common repairs
+- AVAILABILITY: 24/7 emergency service, Same-day appointments
+- COVERAGE: List 5-10 cities/neighborhoods served
+- TRUST: Licensed, bonded, insured, background-checked technicians
+- GUARANTEES: Satisfaction guaranteed, Upfront pricing, No overtime charges
+`);
+  }
+
+  if (input.includes('auto') || input.includes('car') || input.includes('mechanic') || industry.includes('auto')) {
+    contextHints.push(`
+DETECTED: AUTO REPAIR/DEALERSHIP
+Generate these specific elements:
+- SERVICES: Oil changes $39.99, Brake service, Tire rotation, Engine diagnostics, A/C repair
+- BRANDS: All makes and models, or specific brand specialization
+- WARRANTIES: 12-month/12,000-mile warranty on repairs
+- HOURS: Mon-Fri 7:30am-6pm, Sat 8am-4pm
+- FEATURES: Free estimates, Loaner cars available, Shuttle service
+- TRUST: ASE certified technicians, BBB A+ rating
+`);
+  }
+
+  if (input.includes('tattoo') || input.includes('ink') || input.includes('body art') || industry.includes('tattoo')) {
+    contextHints.push(`
+DETECTED: TATTOO STUDIO
+Generate these specific elements:
+- ARTISTS: Create 3-5 tattoo artist profiles with UNIQUE names (like "Marcus 'Blackout' Rodriguez"), each with a specialty:
+  * Traditional & Neo-Traditional
+  * Photorealistic Portraits
+  * Blackwork & Geometric
+  * Japanese/Irezumi
+  * Watercolor & Abstract
+- PRICING: Custom quotes start at $150/hour, minimum $80-100, large pieces by consultation
+- SERVICES: Custom tattoos, Cover-ups, Touch-ups, Consultations (free)
+- HOURS: Tue-Sat 12pm-10pm, Sun-Mon by appointment only
+- POLICIES: 18+ with valid ID, Deposit required, 48-hour cancellation policy
+- AFTERCARE: Detailed aftercare instructions provided, Free touch-ups within 6 months
+- ATMOSPHERE: Professional, clean, sterile environment, Walk-ins welcome (when available)
+`);
+  }
+
+  if (input.includes('barber') || input.includes('grooming') || industry.includes('barber')) {
+    contextHints.push(`
+DETECTED: BARBERSHOP
+Generate these specific elements:
+- BARBERS: Create 3-5 barber profiles with names and specialties (fades, classic cuts, beard work)
+- SERVICES: Haircut $25-35, Beard trim $15, Hot towel shave $30, Kids cut $20, Full service $50
+- HOURS: Tue-Fri 9am-7pm, Sat 8am-5pm, Sun-Mon closed
+- FEATURES: Walk-ins welcome, Appointments available, Cash and card accepted
+- PRODUCTS: Premium pomades, beard oils, grooming kits for sale
+- ATMOSPHERE: Classic barbershop vibe, sports on TV, friendly conversation
+`);
+  }
+
+  if (input.includes('preschool') || input.includes('montessori') || input.includes('daycare') ||
+      input.includes('childcare') || input.includes('nursery') || input.includes('kindergarten') ||
+      industry.includes('preschool') || industry.includes('montessori') || industry.includes('daycare')) {
+    contextHints.push(`
+DETECTED: PRESCHOOL/MONTESSORI/DAYCARE
+Generate these specific elements:
+- PROGRAMS: Infant (6wks-12mo), Toddler (1-2yrs), Preschool (3-4yrs), Pre-K (4-5yrs), Before/After School
+- CURRICULUM: Play-based learning, Montessori method, STEM activities, Art & Music, Outdoor play
+- TEACHERS: Create 4-6 warm, friendly teacher profiles with education credentials (ECE certified, CPR trained)
+- HOURS: Mon-Fri 6:30am-6:30pm, Year-round or School-year options
+- TUITION: Full-time $1,200-1,800/mo, Part-time options available, Sibling discounts
+- FEATURES: Low student-teacher ratios (1:4 for infants, 1:8 for preschool), Organic snacks, Daily reports via app
+- SAFETY: Licensed, Background-checked staff, Secure entry, Video monitoring
+- GALLERY: Show children learning, art projects, playground activities, circle time, reading corners
+- ATMOSPHERE: Nurturing, educational, safe, fun learning environment
+`);
+  }
+
+  if (input.includes('education') || input.includes('school') || input.includes('academy') ||
+      input.includes('tutoring') || input.includes('learning center') ||
+      industry.includes('education') || industry.includes('tutoring')) {
+    contextHints.push(`
+DETECTED: EDUCATION/TUTORING CENTER
+Generate these specific elements:
+- PROGRAMS: Math tutoring, Reading/Writing, Test prep (SAT/ACT), STEM enrichment, Language classes
+- GRADE LEVELS: Elementary, Middle School, High School, College prep
+- INSTRUCTORS: Create 4-6 teacher profiles with degrees and teaching experience
+- FORMATS: 1-on-1 tutoring, Small groups (3-5 students), Online sessions, In-home tutoring
+- PRICING: $50-100/hour for individual, $30-50/hour for group sessions, Package discounts
+- HOURS: Mon-Fri 3pm-8pm, Sat 9am-5pm (peak after-school hours)
+- RESULTS: "Students improve 2+ grade levels", "95% see improvement within 3 months"
+- FEATURES: Free assessment, Progress tracking, Homework help, Flexible scheduling
+- GALLERY: Show students studying, classroom activities, graduation celebrations
+- ATMOSPHERE: Supportive, encouraging, academic excellence focus
+`);
+  }
+
+  // Default guidance if no specific type detected
+  if (contextHints.length === 0) {
+    contextHints.push(`
+GENERAL BUSINESS - Infer from the name and industry:
+- Create 6-10 specific services/products with realistic prices
+- Generate 3-4 team member profiles with realistic names and roles
+- Include specific business hours appropriate for the industry
+- Add realistic stats: years in business (10-25), customers served (1000+), rating (4.8+ stars)
+- Create 3-4 testimonials with first names and specific praise
+- Include specific location/service area details
+`);
+  }
+
+  return contextHints.join('\n');
+}
+
+/**
+ * Build layout context from frontend preview configuration
+ * This converts the frontend's layoutStylePreview into AI prompt instructions
+ */
+function buildLayoutContextFromPreview(layoutId, previewConfig, industryKey) {
+  const heroStyleMap = {
+    'full': 'Full-bleed hero image with overlay text',
+    'split': 'Split layout with text on left, image on right',
+    'minimal': 'Minimal hero with clean typography focus',
+    'corporate': 'Professional corporate hero with subtle imagery',
+    'warm': 'Warm, welcoming hero with friendly imagery',
+    'clean': 'Clean, modern hero with plenty of whitespace',
+    'team': 'Team-focused hero showcasing professionals',
+    'overlay': 'Image with gradient overlay and centered text'
+  };
+
+  const contentStyleMap = {
+    'formal': 'Formal, professional content presentation',
+    'results': 'Results-driven with case studies and testimonials',
+    'services': 'Services-focused with clear offerings grid',
+    'caring': 'Warm, compassionate content for patient/client trust',
+    'personal': 'Personal, human-centered content approach'
+  };
+
+  const ctaStyleMap = {
+    'overlay': 'CTA button overlaid on hero image',
+    'button': 'Prominent CTA buttons below hero',
+    'prominent': 'Large, eye-catching CTA section',
+    'subtle': 'Subtle, professional CTA placement',
+    'consultation': 'Free consultation CTA emphasis',
+    'booking': 'Easy booking/appointment CTA'
+  };
+
+  const heroDesc = heroStyleMap[previewConfig.heroStyle] || 'Modern hero section';
+  const contentDesc = contentStyleMap[previewConfig.contentStyle] || '';
+  const ctaDesc = ctaStyleMap[previewConfig.ctaStyle] || 'Clear call-to-action';
+  const menuPosition = previewConfig.menuPosition ? `Menu position: ${previewConfig.menuPosition}` : '';
+
+  return `
+═══════════════════════════════════════════════════════════════
+SELECTED LAYOUT STYLE: ${layoutId.replace(/-/g, ' ').toUpperCase()}
+═══════════════════════════════════════════════════════════════
+
+HERO SECTION STYLE:
+${heroDesc}
+${previewConfig.heroStyle === 'full' ? '- Use a dramatic full-width background image\n- Text should be white with text-shadow for readability\n- Include gradient overlay for text contrast' : ''}
+${previewConfig.heroStyle === 'split' ? '- Two-column layout: compelling headline on left, visual on right\n- Clean separation between text and image areas' : ''}
+${previewConfig.heroStyle === 'minimal' ? '- Focus on typography, minimal imagery\n- Lots of whitespace, clean and elegant\n- Let the copy speak for itself' : ''}
+
+${contentDesc ? `CONTENT STYLE:\n${contentDesc}` : ''}
+
+CTA APPROACH:
+${ctaDesc}
+${menuPosition}
+
+IMPORTANT: The user specifically chose the "${layoutId.replace(/-/g, ' ')}" layout.
+Follow these style guidelines closely when generating the hero and page structure.
+═══════════════════════════════════════════════════════════════
+`;
+}
+
+/**
+ * Extract statistics from business description text
+ * Parses numbers and context to provide realistic stats for the AI
+ */
+function extractBusinessStats(businessText, industryName) {
+  if (!businessText) {
+    return generateDefaultStats(industryName);
+  }
+
+  const stats = [];
+  const text = businessText.toLowerCase();
+
+  // Pattern matchers for common stat phrases
+  const patterns = [
+    // Years of experience
+    { regex: /(\d+)\+?\s*(?:years?|yrs?)(?:\s+(?:of\s+)?(?:experience|in business|combined))?/gi, label: 'Years Experience', suffix: '+ Years' },
+    { regex: /(?:since|established|founded|opened)\s*(?:in\s+)?(\d{4})/gi, type: 'year', label: 'Years in Business', suffix: '+ Years' },
+    { regex: /(\d+)\+?\s*(?:years?|yrs?)\s*(?:combined|of combined)/gi, label: 'Combined Experience', suffix: '+ Years' },
+
+    // Reviews and ratings
+    { regex: /(\d+)\+?\s*(?:5-star|five star|★+)\s*reviews?/gi, label: 'Reviews', suffix: '+ 5-Star Reviews' },
+    { regex: /(\d+)\+?\s*reviews?/gi, label: 'Reviews', suffix: '+ Reviews' },
+    { regex: /(\d+(?:\.\d+)?)\s*(?:star|★)\s*(?:rating|average)/gi, label: 'Rating', suffix: ' Stars' },
+
+    // Customers/Clients
+    { regex: /(\d+(?:,\d{3})*)\+?\s*(?:happy\s+)?(?:customers?|clients?|families|patients?)/gi, label: 'Customers', suffix: '+ Happy Customers' },
+    { regex: /served\s+(?:over\s+)?(\d+(?:,\d{3})*)\+?/gi, label: 'Customers Served', suffix: '+ Served' },
+
+    // Projects/Jobs
+    { regex: /(\d+(?:,\d{3})*)\+?\s*(?:projects?|jobs?|homes?|cases?|installations?)/gi, label: 'Projects', suffix: '+ Projects' },
+    { regex: /completed\s+(?:over\s+)?(\d+(?:,\d{3})*)\+?/gi, label: 'Completed', suffix: '+ Completed' },
+
+    // Team
+    { regex: /(\d+)\+?\s*(?:team\s+members?|employees?|staff|professionals?|experts?|technicians?)/gi, label: 'Team', suffix: '+ Team Members' },
+
+    // Satisfaction
+    { regex: /(\d+)%\s*(?:satisfaction|success|retention|customer\s+satisfaction)/gi, label: 'Satisfaction', suffix: '% Satisfaction' },
+
+    // Awards
+    { regex: /(\d+)\+?\s*awards?/gi, label: 'Awards', suffix: '+ Awards' },
+
+    // Locations
+    { regex: /(\d+)\+?\s*locations?/gi, label: 'Locations', suffix: '+ Locations' },
+
+    // Products/Services
+    { regex: /(\d+)\+?\s*(?:products?|services?|menu items?)/gi, label: 'Products', suffix: '+ Products' }
+  ];
+
+  const foundStats = {};
+
+  for (const pattern of patterns) {
+    const matches = [...businessText.matchAll(pattern.regex)];
+    for (const match of matches) {
+      let value = match[1];
+
+      // Handle "since YEAR" pattern
+      if (pattern.type === 'year') {
+        const year = parseInt(value);
+        const currentYear = new Date().getFullYear();
+        value = currentYear - year;
+      } else {
+        // Remove commas and parse
+        value = parseInt(value.replace(/,/g, ''));
+      }
+
+      if (value > 0 && !foundStats[pattern.label]) {
+        foundStats[pattern.label] = { value, suffix: pattern.suffix };
+      }
+    }
+  }
+
+  // Build the stats context string
+  if (Object.keys(foundStats).length > 0) {
+    let result = 'EXTRACTED STATS FROM BUSINESS DESCRIPTION (USE THESE!):\n';
+    for (const [label, data] of Object.entries(foundStats)) {
+      result += `- ${label}: ${data.value}${data.suffix}\n`;
+      stats.push(`<AnimatedCounter end={${data.value}} suffix="${data.suffix}" duration={2} />`);
+    }
+    result += '\nUSE THESE EXACT NUMBERS in AnimatedCounter components!\n';
+    return result;
+  }
+
+  // No stats found - generate industry-appropriate defaults
+  return generateDefaultStats(industryName);
+}
+
+/**
+ * Generate realistic default stats based on industry
+ */
+function generateDefaultStats(industryName) {
+  const industry = (industryName || '').toLowerCase();
+
+  let defaults = {
+    years: 15,
+    customers: 1000,
+    satisfaction: 98,
+    extra: null
+  };
+
+  // Industry-specific defaults
+  if (industry.includes('tattoo') || industry.includes('ink') || industry.includes('body art')) {
+    defaults = { years: 8, customers: 5000, satisfaction: 99, extra: { label: 'Custom Designs', value: 10000 } };
+  } else if (industry.includes('barber') || industry.includes('hair') || industry.includes('salon') || industry.includes('grooming')) {
+    defaults = { years: 12, customers: 2700, satisfaction: 98, extra: { label: 'Master Barbers', value: 4 } };
+  } else if (industry.includes('law') || industry.includes('legal')) {
+    defaults = { years: 25, customers: 500, satisfaction: 98, extra: { label: 'Cases Won', value: 250 } };
+  } else if (industry.includes('restaurant') || industry.includes('food') || industry.includes('pizza')) {
+    defaults = { years: 10, customers: 5000, satisfaction: 97, extra: { label: 'Dishes Served', value: 50000 } };
+  } else if (industry.includes('fitness') || industry.includes('gym')) {
+    defaults = { years: 8, customers: 2000, satisfaction: 96, extra: { label: 'Transformations', value: 500 } };
+  } else if (industry.includes('medical') || industry.includes('health') || industry.includes('dental')) {
+    defaults = { years: 20, customers: 3000, satisfaction: 99, extra: { label: 'Procedures', value: 10000 } };
+  } else if (industry.includes('plumb') || industry.includes('hvac') || industry.includes('electric')) {
+    defaults = { years: 15, customers: 2500, satisfaction: 98, extra: { label: 'Jobs Completed', value: 5000 } };
+  } else if (industry.includes('bowl') || industry.includes('arcade') || industry.includes('entertainment')) {
+    defaults = { years: 12, customers: 10000, satisfaction: 95, extra: { label: 'Parties Hosted', value: 2000 } };
+  } else if (industry.includes('retail') || industry.includes('shop')) {
+    defaults = { years: 10, customers: 5000, satisfaction: 96, extra: { label: 'Products', value: 500 } };
+  } else if (industry.includes('consult') || industry.includes('professional')) {
+    defaults = { years: 20, customers: 300, satisfaction: 99, extra: { label: 'Projects', value: 150 } };
+  } else if (industry.includes('auto') || industry.includes('car') || industry.includes('mechanic')) {
+    defaults = { years: 18, customers: 4000, satisfaction: 97, extra: { label: 'Vehicles Serviced', value: 8000 } };
+  } else if (industry.includes('spa') || industry.includes('beauty') || industry.includes('wellness')) {
+    defaults = { years: 10, customers: 3500, satisfaction: 98, extra: { label: 'Treatments', value: 15000 } };
+  } else if (industry.includes('pet') || industry.includes('vet') || industry.includes('grooming')) {
+    defaults = { years: 8, customers: 2000, satisfaction: 99, extra: { label: 'Happy Pets', value: 5000 } };
+  } else if (industry.includes('preschool') || industry.includes('montessori') || industry.includes('daycare') ||
+             industry.includes('childcare') || industry.includes('nursery') || industry.includes('kindergarten')) {
+    defaults = { years: 12, customers: 500, satisfaction: 99, extra: { label: 'Graduates', value: 1500 } };
+  } else if (industry.includes('education') || industry.includes('school') || industry.includes('academy') ||
+             industry.includes('tutoring') || industry.includes('learning')) {
+    defaults = { years: 15, customers: 1000, satisfaction: 97, extra: { label: 'Students Taught', value: 5000 } };
+  }
+
+  let result = `NO SPECIFIC STATS FOUND - USE THESE REALISTIC DEFAULTS FOR ${industryName || 'BUSINESS'}:
+- Years in Business: ${defaults.years}+ Years
+- Customers Served: ${defaults.customers}+ Happy Customers
+- Satisfaction Rate: ${defaults.satisfaction}%+ Satisfaction`;
+
+  if (defaults.extra) {
+    result += `\n- ${defaults.extra.label}: ${defaults.extra.value}+`;
+  }
+
+  result += `
+
+IMPORTANT: These are MINIMUM realistic values. Feel free to adjust slightly higher.
+NEVER use 0 or placeholder text like "X" - always use real numbers!`;
+
+  return result;
+}
+
+/**
+ * Generate CONTEXT-AWARE industry-specific image URLs
+ * Returns different images for hero, team, gallery, services based on context
+ */
+function getIndustryImageUrls(industryName) {
+  const industry = (industryName || '').toLowerCase();
+
+  // Context-aware image configurations - different images for different page sections
+  const imageConfig = {
+    tattoo: {
+      hero: 'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28?w=1920', // Tattoo studio interior
+      heroVideo: 'https://videos.pexels.com/video-files/5319884/5319884-hd_1920_1080_30fps.mp4', // Tattoo artist working
+      team: [
+        'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d?w=800', // Tattoo artist working
+        'https://images.unsplash.com/photo-1590246814883-57764f7f17c9?w=800', // Tattooed person portrait
+        'https://images.unsplash.com/photo-1542727365-19732a80dcfd?w=800', // Artist with tattoo machine
+        'https://images.unsplash.com/photo-1565058379802-bbe93b2f703a?w=800'  // Tattooed professional
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1562962230-16e4623d36e6?w=800', // Tattoo closeup
+        'https://images.unsplash.com/photo-1560707303-4e980ce876ad?w=800', // Arm tattoo
+        'https://images.unsplash.com/photo-1475403614135-5f1aa0eb5015?w=800', // Back tattoo
+        'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=800'  // Detailed tattoo work
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d?w=800', // Tattooing in progress
+        'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28?w=800'  // Studio setup
+      ],
+      searchTerms: ['tattoo artist', 'tattoo studio', 'tattooing', 'tattoo art', 'inked']
+    },
+    barbershop: {
+      hero: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=1920',
+      heroVideo: 'https://videos.pexels.com/video-files/3993451/3993451-uhd_2560_1440_25fps.mp4', // Barber cutting hair
+      team: [
+        'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=800', // Barber at work
+        'https://images.unsplash.com/photo-1567894340315-735d7c361db0?w=800', // Barber portrait
+        'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?w=800', // Barber styling
+        'https://images.unsplash.com/photo-1493256338651-d82f7acb2b38?w=800'  // Barber with client
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?w=800', // Barber tools
+        'https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=800', // Shop interior
+        'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=800'  // Styling
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=800',
+        'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?w=800'
+      ],
+      searchTerms: ['barbershop', 'barber cutting hair', 'mens grooming', 'barber portrait']
+    },
+    salon: {
+      hero: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=1920',
+      team: [
+        'https://images.unsplash.com/photo-1562322140-8baeececf3df?w=800', // Stylist working
+        'https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?w=800', // Hairstylist portrait
+        'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800'  // Salon professional
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800',
+        'https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?w=800'
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1562322140-8baeececf3df?w=800',
+        'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800'
+      ],
+      searchTerms: ['hair salon', 'hairstylist', 'hair cutting', 'salon professional']
+    },
+    restaurant: {
+      hero: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1920',
+      heroVideo: 'https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4', // Chef plating food
+      team: [
+        'https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=800', // Chef portrait
+        'https://images.unsplash.com/photo-1581299894007-aaa50297cf16?w=800', // Chef cooking
+        'https://images.unsplash.com/photo-1600565193348-f74bd3c7ccdf?w=800'  // Kitchen staff
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1544025162-d76694265947?w=800', // Food plating
+        'https://images.unsplash.com/photo-1473093295043-cdd812d0e601?w=800', // Dish
+        'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=800'  // Food
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800',
+        'https://images.unsplash.com/photo-1544025162-d76694265947?w=800'
+      ],
+      searchTerms: ['restaurant interior', 'chef cooking', 'fine dining', 'chef portrait']
+    },
+    pizza: {
+      hero: 'https://images.unsplash.com/photo-1579751626657-72bc17010498?w=1920',
+      heroVideo: 'https://videos.pexels.com/video-files/4253291/4253291-uhd_2560_1440_25fps.mp4', // Pizza being made
+      team: [
+        'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800', // Pizza chef
+        'https://images.unsplash.com/photo-1571407970349-bc81e7e96d47?w=800'  // Pizza making
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800',
+        'https://images.unsplash.com/photo-1604382355076-af4b0eb60143?w=800'
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1579751626657-72bc17010498?w=800'
+      ],
+      searchTerms: ['pizza chef', 'pizzeria', 'pizza making', 'italian restaurant']
+    },
+    dental: {
+      hero: 'https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=1920',
+      team: [
+        'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=800', // Dentist portrait
+        'https://images.unsplash.com/photo-1606811841689-23dfddce3e95?w=800', // Dental team
+        'https://images.unsplash.com/photo-1609840114035-3c981b782dfe?w=800'  // Dentist working
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=800',
+        'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=800'
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=800'
+      ],
+      searchTerms: ['dentist', 'dental office', 'dental team', 'dental professional']
+    },
+    fitness: {
+      hero: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1920',
+      heroVideo: 'https://videos.pexels.com/video-files/4761434/4761434-uhd_2560_1440_25fps.mp4', // Gym workout
+      team: [
+        'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=800', // Personal trainer
+        'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800', // Trainer portrait
+        'https://images.unsplash.com/photo-1571902943202-507ec2618e8f?w=800'  // Fitness coach
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800',
+        'https://images.unsplash.com/photo-1571902943202-507ec2618e8f?w=800'
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800'
+      ],
+      searchTerms: ['personal trainer', 'fitness coach', 'gym trainer', 'workout instructor']
+    },
+    auto: {
+      hero: 'https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?w=1920',
+      team: [
+        'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800', // Mechanic
+        'https://images.unsplash.com/photo-1625047509168-a7026f36de04?w=800'  // Auto tech
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?w=800',
+        'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800'
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800'
+      ],
+      searchTerms: ['auto mechanic', 'car repair', 'mechanic portrait', 'auto technician']
+    },
+    law: {
+      hero: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1920',
+      team: [
+        'https://images.unsplash.com/photo-1505664194779-8beaceb93744?w=800', // Attorney portrait
+        'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800', // Lawyer
+        'https://images.unsplash.com/photo-1521791055366-0d553872125f?w=800'  // Legal professional
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1505664194779-8beaceb93744?w=800',
+        'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800'
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1505664194779-8beaceb93744?w=800'
+      ],
+      searchTerms: ['attorney', 'law firm', 'lawyer portrait', 'legal professional']
+    },
+    spa: {
+      hero: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1920',
+      heroVideo: 'https://videos.pexels.com/video-files/3188167/3188167-uhd_2560_1440_25fps.mp4', // Spa massage treatment
+      team: [
+        'https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=800', // Spa therapist
+        'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800'  // Wellness professional
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=800',
+        'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=800'
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=800'
+      ],
+      searchTerms: ['spa therapist', 'massage therapist', 'wellness professional', 'spa treatment']
+    },
+    // Education - Preschool, Montessori, Daycare, Learning Centers
+    education: {
+      hero: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=1920', // Children learning
+      team: [
+        'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800', // Teacher with students
+        'https://images.unsplash.com/photo-1571260899304-425eee4c7efc?w=800', // Teacher smiling
+        'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800', // Educator portrait
+        'https://images.unsplash.com/photo-1577896851231-70ef18881754?w=800'  // Teacher helping student
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=800', // Children learning
+        'https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=800', // Art project
+        'https://images.unsplash.com/photo-1596464716127-f2a82984de30?w=800', // Classroom activities
+        'https://images.unsplash.com/photo-1564429238607-4a7e00ead26a?w=800', // Children playing
+        'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?w=800', // Reading time
+        'https://images.unsplash.com/photo-1602052793312-b99c2a9ee797?w=800'  // Group activity
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=800',
+        'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800'
+      ],
+      searchTerms: ['preschool classroom', 'children learning', 'montessori', 'daycare activities', 'kids art project']
+    },
+    // Preschool/Montessori specific (alias with child-specific images)
+    preschool: {
+      hero: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=1920', // Kids in classroom
+      team: [
+        'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800', // Teacher with children
+        'https://images.unsplash.com/photo-1577896851231-70ef18881754?w=800', // Teacher reading
+        'https://images.unsplash.com/photo-1571260899304-425eee4c7efc?w=800', // Friendly teacher
+        'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800'  // Educator
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=800', // Art activity
+        'https://images.unsplash.com/photo-1596464716127-f2a82984de30?w=800', // Circle time
+        'https://images.unsplash.com/photo-1564429238607-4a7e00ead26a?w=800', // Playground
+        'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?w=800', // Story time
+        'https://images.unsplash.com/photo-1602052793312-b99c2a9ee797?w=800', // Music class
+        'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=800', // Learning center
+        'https://images.unsplash.com/photo-1567057419565-4349c49d8a04?w=800', // Sensory play
+        'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=800'  // Happy children
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800',
+        'https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=800'
+      ],
+      searchTerms: ['preschool', 'montessori classroom', 'toddler activities', 'early childhood', 'daycare']
+    },
+    default: {
+      hero: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=1920',
+      team: [
+        'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800', // Business team
+        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800', // Professional portrait
+        'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800'  // Team member
+      ],
+      gallery: [
+        'https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=800',
+        'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800'
+      ],
+      services: [
+        'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800'
+      ],
+      searchTerms: ['business professional', 'team portrait', 'office', 'professional headshot']
+    }
+  };
+
+  // Match industry to config with expanded matching
+  let config = imageConfig.default;
+  if (industry.includes('tattoo') || industry.includes('ink') || industry.includes('body art')) {
+    config = imageConfig.tattoo;
+  } else if (industry.includes('barber') || industry.includes('grooming')) {
+    config = imageConfig.barbershop;
+  } else if (industry.includes('salon') || industry.includes('hair') || industry.includes('beauty')) {
+    config = imageConfig.salon;
+  } else if (industry.includes('pizza') || industry.includes('pizzeria')) {
+    config = imageConfig.pizza;
+  } else if (industry.includes('restaurant') || industry.includes('food') || industry.includes('dining') || industry.includes('cafe')) {
+    config = imageConfig.restaurant;
+  } else if (industry.includes('dental') || industry.includes('dentist')) {
+    config = imageConfig.dental;
+  } else if (industry.includes('fitness') || industry.includes('gym') || industry.includes('yoga')) {
+    config = imageConfig.fitness;
+  } else if (industry.includes('auto') || industry.includes('car') || industry.includes('mechanic')) {
+    config = imageConfig.auto;
+  } else if (industry.includes('law') || industry.includes('legal') || industry.includes('attorney')) {
+    config = imageConfig.law;
+  } else if (industry.includes('spa') || industry.includes('wellness') || industry.includes('massage')) {
+    config = imageConfig.spa;
+  } else if (industry.includes('preschool') || industry.includes('montessori') || industry.includes('daycare') ||
+             industry.includes('childcare') || industry.includes('nursery') || industry.includes('early childhood') ||
+             industry.includes('kindergarten') || industry.includes('toddler')) {
+    config = imageConfig.preschool;
+  } else if (industry.includes('education') || industry.includes('school') || industry.includes('academy') ||
+             industry.includes('tutoring') || industry.includes('learning center')) {
+    config = imageConfig.education;
+  }
+
+  // Return with backward compatibility (hero and secondary) PLUS new context-specific fields
+  return {
+    hero: config.hero,
+    heroVideo: config.heroVideo || null, // Video background for supported industries
+    secondary: config.gallery || config.team, // Backward compat
+    team: config.team,
+    gallery: config.gallery,
+    services: config.services,
+    searchTerms: config.searchTerms
+  };
+}
 
 // Build context from existing site (REBUILD mode)
 function buildRebuildContext(existingSite) {
@@ -1858,7 +3179,7 @@ Apply this visual style throughout all pages - backgrounds, image treatments, ov
   return context;
 }
 
-function buildFreshModePrompt(pageId, pageName, otherPages, description, promptConfig) {
+async function buildFreshModePrompt(pageId, pageName, otherPages, description, promptConfig) {
   const cfg = promptConfig || {};
   const industry = cfg.industry || {};
   const colors = cfg.colors || { primary: '#6366f1', accent: '#06b6d4', text: '#1a1a2e', textMuted: '#64748b', background: '#ffffff' };
@@ -1898,17 +3219,308 @@ Replace any standard elements with the user's specified alternatives.
 ══════════════════════════════════════════════════════════════
 ` : '';
 
-  // EXTRACT INDUSTRY LAYOUT CONFIG
+  // EXTRACT INDUSTRY LAYOUT CONFIG (support both layoutKey and layoutStyleId from frontend)
   const industryLayoutKey = description.industryKey || null;
-  const selectedLayoutKey = description.layoutKey || null;
-  const layoutContext = industryLayoutKey ? buildLayoutContext(industryLayoutKey, selectedLayoutKey) : '';
+  const selectedLayoutKey = description.layoutStyleId || description.layoutKey || null;
+  const layoutStylePreview = description.layoutStylePreview || null;
+
+  // Build layout context - prefer frontend preview config, fallback to industry-layouts.cjs
+  let layoutContext = '';
+  if (layoutStylePreview && selectedLayoutKey) {
+    // Use the frontend's preview configuration directly
+    layoutContext = buildLayoutContextFromPreview(selectedLayoutKey, layoutStylePreview, industryLayoutKey);
+  } else if (industryLayoutKey) {
+    // Fallback to industry-layouts.cjs
+    layoutContext = buildLayoutContext(industryLayoutKey, selectedLayoutKey);
+  }
+
+  // Extract stats from business description
+  const businessText = description.text || '';
+  const extractedStats = extractBusinessStats(businessText, industry.name);
+
+  // Build smart context inference for minimal input
+  const businessInput = description.text || 'A professional business';
+  const smartContextGuide = buildSmartContextGuide(businessInput, industry.name);
+
+  // Get industry-specific CONTEXT-AWARE image URLs
+  const industryImages = getIndustryImageUrls(industry.name || businessInput);
+
+  // Check if user enabled video hero (from UI toggle)
+  const enableVideoHero = description.enableVideoHero === true;
+
+  // If no hardcoded video available but video is enabled, try dynamic Pexels fetch
+  if (enableVideoHero && !industryImages.heroVideo) {
+    console.log('   🎬 No hardcoded video - trying dynamic Pexels fetch...');
+    const dynamicVideoUrl = await getIndustryVideo(industry.name || '', businessInput);
+    if (dynamicVideoUrl) {
+      industryImages.heroVideo = dynamicVideoUrl;
+      console.log('   ✅ Using dynamic Pexels video');
+    }
+  }
+
+  const hasVideoAvailable = !!industryImages.heroVideo;
+
+  // Build video context ONLY if video is enabled AND available
+  let videoContext = '';
+  if (enableVideoHero && hasVideoAvailable) {
+    videoContext = `
+══════════════════════════════════════════════════════════════
+🎬 VIDEO BACKGROUND ENABLED - USE THIS FOR HOME PAGE HERO!
+══════════════════════════════════════════════════════════════
+The user has ENABLED video background for the home page hero!
+
+VIDEO URL: ${industryImages.heroVideo}
+POSTER IMAGE (fallback): ${industryImages.hero}
+
+HOW TO USE VideoBackground COMPONENT:
+import { VideoBackground } from '../effects';
+
+<VideoBackground
+  videoSrc="${industryImages.heroVideo}"
+  posterImage="${industryImages.hero}"
+  overlay="linear-gradient(rgba(10, 22, 40, 0.7), rgba(10, 22, 40, 0.85))"
+  height="100vh"
+>
+  {/* Hero content goes here */}
+  <h1>Your Headline</h1>
+  <p>Your tagline</p>
+  <button>CTA Button</button>
+</VideoBackground>
+
+IMPORTANT VIDEO RULES:
+1. USE VideoBackground on the HOME PAGE hero section (user requested this!)
+2. Other pages should use static images (ParallaxSection or regular backgrounds)
+3. The video autoplays muted and loops - perfect for ambiance
+4. On mobile, it automatically falls back to the poster image
+5. Always include a dark overlay for text readability
+══════════════════════════════════════════════════════════════
+`;
+  } else if (hasVideoAvailable && !enableVideoHero) {
+    // Video available but user disabled it
+    videoContext = `
+NOTE: Video background is available for this industry but user has DISABLED it.
+Use static image backgrounds instead (ParallaxSection or backgroundImage).
+`;
+  }
+
+  const imageContext = `
+══════════════════════════════════════════════════════════════
+CONTEXT-AWARE IMAGES - USE THE RIGHT IMAGE FOR EACH SECTION
+══════════════════════════════════════════════════════════════
+${videoContext}
+🎯 HERO/HEADER SECTION - Use atmospheric, wide shots:
+${industryImages.hero}
+
+👥 TEAM/ARTIST/STAFF SECTION - Use portraits of ACTUAL professionals in this industry:
+${(industryImages.team || []).map((url, i) => `Team Member ${i + 1}: ${url}`).join('\n')}
+CRITICAL: For tattoo studios, use tattoo artist photos. For barbershops, use barber photos.
+NEVER use random stock photos of people stretching or unrelated activities!
+
+🖼️ GALLERY/PORTFOLIO SECTION - Use work examples:
+${(industryImages.gallery || []).map((url, i) => `Gallery ${i + 1}: ${url}`).join('\n')}
+
+🛠️ SERVICES SECTION - Use action shots of the work being done:
+${(industryImages.services || []).map((url, i) => `Service ${i + 1}: ${url}`).join('\n')}
+
+🔍 SEARCH TERMS for additional images: ${industryImages.searchTerms.join(', ')}
+
+══════════════════════════════════════════════════════════════
+CRITICAL IMAGE MATCHING RULES:
+══════════════════════════════════════════════════════════════
+1. TEAM PAGES: Use ONLY the team images above - they show actual professionals in this industry
+2. HERO: Use the hero image for big background sections
+3. GALLERY: Use gallery images for portfolio/work showcases
+4. SERVICES: Use service images to illustrate what you offer
+5. NEVER mix contexts - don't put a yoga stretch photo on a tattoo artist page!
+6. NEVER use generic Unsplash URLs - always use the industry-specific ones above
+7. Format: url("IMAGE_URL") for CSS backgrounds or src="IMAGE_URL" for img tags
+
+For TATTOO STUDIOS specifically:
+- Team section: Use photos of tattoo artists working or portraits of tattooed professionals
+- Gallery: Use closeup shots of completed tattoos
+- Hero: Use studio interior with tattoo equipment visible
+
+For PRESCHOOLS/MONTESSORI/DAYCARE specifically:
+- Team section: Use photos of teachers with children, warm educator portraits
+- Gallery: Use photos of children learning, art projects, classroom activities, playground
+- Hero: Use bright, colorful classroom or children engaged in activities
+- NEVER use generic stock business photos - always show children and educators
+
+For EDUCATION/SCHOOLS specifically:
+- Team section: Use photos of teachers, educators, tutors in teaching environments
+- Gallery: Use photos of students learning, classroom settings, study groups
+- Hero: Use academic settings with students engaged in learning
+══════════════════════════════════════════════════════════════
+`;
+
+  // ==========================================
+  // NEW: High-impact question context
+  // ==========================================
+  const teamSize = description.teamSize || null;
+  const priceRange = description.priceRange || null;
+  const yearsEstablished = description.yearsEstablished || null;
+  const inferredDetails = description.inferredDetails || null;
+  const location = description.location || null;
+  const targetAudience = description.targetAudience || [];
+  const primaryCTA = description.primaryCTA || 'contact';
+  const tone = description.tone || 'balanced';
+
+  // Build business context from high-impact questions
+  let businessContext = '';
+
+  if (teamSize || priceRange || yearsEstablished || location) {
+    businessContext = `
+══════════════════════════════════════════════════════════════
+BUSINESS DETAILS - USE THESE FOR ACCURATE CONTENT
+══════════════════════════════════════════════════════════════
+`;
+    if (location) {
+      businessContext += `📍 LOCATION: ${location} - Customize content for this area\n`;
+    }
+    if (teamSize) {
+      const teamSizeMap = {
+        'solo': '1 person (solo operator) - use "I" language, personal touch',
+        'small': '2-4 people - use "our small team" language, close-knit feel',
+        'medium': '5-10 people - use "our team" language, established feel',
+        'large': '10+ people - use "our professionals" language, corporate feel'
+      };
+      businessContext += `👥 TEAM SIZE: ${teamSizeMap[teamSize] || teamSize}\n`;
+    }
+    if (priceRange) {
+      const priceMap = {
+        'budget': 'Budget-friendly ($) - emphasize value, affordability, competitive pricing',
+        'mid': 'Mid-range ($$) - balance quality and value, mainstream pricing',
+        'premium': 'Premium ($$$) - emphasize quality, expertise, worth the investment',
+        'luxury': 'Luxury ($$$$) - exclusive, high-end, bespoke, elite experience'
+      };
+      businessContext += `💰 PRICE RANGE: ${priceMap[priceRange] || priceRange}\n`;
+    }
+    if (yearsEstablished) {
+      const yearsMap = {
+        'new': 'Just starting - emphasize fresh perspective, modern approach, passion',
+        'growing': '1-5 years - emphasize momentum, proven results, growing reputation',
+        'established': '5-15 years - emphasize experience, track record, trusted expertise',
+        'veteran': '15+ years - emphasize legacy, unmatched experience, industry leader'
+      };
+      businessContext += `⏱️ EXPERIENCE: ${yearsMap[yearsEstablished] || yearsEstablished}\n`;
+    }
+    if (targetAudience.length > 0) {
+      businessContext += `🎯 TARGET AUDIENCE: ${targetAudience.join(', ')}\n`;
+    }
+    if (primaryCTA && primaryCTA !== 'contact') {
+      const ctaMap = {
+        'book': 'Book Appointment - make booking CTA prominent',
+        'call': 'Call Now - show phone number prominently',
+        'quote': 'Get a Quote - emphasize free quotes/estimates',
+        'buy': 'Buy/Order Now - shopping/ordering focus',
+        'visit': 'Visit Location - directions and map prominent'
+      };
+      businessContext += `👆 PRIMARY CTA: ${ctaMap[primaryCTA] || primaryCTA}\n`;
+    }
+    businessContext += `🎭 TONE: ${tone}\n`;
+    businessContext += `══════════════════════════════════════════════════════════════\n`;
+  }
 
   return `You are a high-end UI/UX Architect. Create a stunning, unique ${pageId} page.
 
-BUSINESS: ${description.text || 'A professional business'}
+BUSINESS INPUT: ${businessInput}
 INDUSTRY: ${industry.name || 'Business'}
 VIBE: ${industry.vibe || 'Unique and modern'}
-${rebuildContext}${inspiredContext}${assetsContext}${extraDetailsContext}${layoutContext}
+${businessContext}
+
+══════════════════════════════════════════════════════════════
+CRITICAL: SMART CONTENT INFERENCE - USE COMMON SENSE!
+══════════════════════════════════════════════════════════════
+${smartContextGuide}
+
+INFERENCE RULES:
+1. If the user only gave a name like "Mario's Pizza" - YOU must infer:
+   - It's a pizzeria/Italian restaurant
+   - Create a realistic menu with actual pizza names, prices ($14-22), toppings
+   - Include appetizers, salads, drinks, desserts with realistic prices
+   - Add realistic hours (11am-10pm), delivery info, location feel
+
+2. If minimal input like "Brooklyn Dental" - YOU must infer:
+   - It's a dental practice
+   - List services: cleanings, fillings, crowns, whitening, implants
+   - Add insurance info, new patient specials, emergency care
+   - Professional but welcoming atmosphere
+
+3. KEYWORD EXPANSION - If user provides keywords or short phrases, EXPAND them into full content:
+   - "fast, reliable, 24/7" → "Your emergency is our priority. Available 24/7, our team arrives fast and fixes it right the first time."
+   - "family owned, 30 years" → "Family-owned and operated since 1994, we've built our reputation on honest work and lasting relationships."
+   - "organic, locally sourced" → "We source our ingredients from local organic farms, ensuring every dish is fresh, sustainable, and bursting with natural flavor."
+   - Take any keywords the user provides and weave them into compelling, professional copy.
+
+4. NEVER generate generic placeholder content like:
+   - "Lorem ipsum" or "[Business Name]"
+   - "Service 1, Service 2, Service 3"
+   - "$XX.XX" or "Call for pricing"
+   - "123 Main Street" (use realistic addresses)
+
+4. ALWAYS generate specific, realistic, industry-appropriate content:
+   - Real menu items with creative names and accurate prices
+   - Specific service descriptions with typical pricing
+   - Realistic business hours for the industry
+   - Genuine-sounding testimonials with first names
+
+${rebuildContext}${inspiredContext}${assetsContext}${extraDetailsContext}${layoutContext}${imageContext}
+══════════════════════════════════════════════════════════════
+CRITICAL: STATISTICS & NUMBERS - NEVER USE ZEROS!
+══════════════════════════════════════════════════════════════
+${extractedStats}
+
+STAT RULES - FOLLOW EXACTLY:
+1. NEVER show "0", "0+", "1%", or single-digit numbers (except for team size)
+2. ALWAYS use numbers from above OR these industry-appropriate minimums:
+   - Years in business: 10+ to 25+ (never below 5)
+   - Customers served: 2,000+ to 10,000+ (never below 500)
+   - Satisfaction rate: 95% to 99% (never below 90%)
+   - Team members: 4 to 25 (realistic for business size)
+
+CORRECT AnimatedCounter EXAMPLES - COPY THIS EXACT PATTERN:
+<AnimatedCounter end={12} suffix="+ Years" duration={2} />
+<AnimatedCounter end={2700} suffix="+ Happy Clients" duration={2.5} />
+<AnimatedCounter end={98} suffix="%" duration={2} />  {/* For percentages */}
+<AnimatedCounter end={4} suffix=" Master Barbers" duration={1.5} />
+
+NOTE: duration is in SECONDS (not milliseconds). Use 2 for 2 seconds.
+
+WRONG EXAMPLES - NEVER DO THIS:
+<AnimatedCounter end={0} suffix="+ Years" />  ❌ Zero is broken
+<AnimatedCounter end={27} suffix="+ Clients" />  ❌ Too small, use 2700
+<AnimatedCounter end={1} suffix="%" />  ❌ 1% satisfaction is insulting
+<AnimatedCounter end={12} duration={2000} />  ❌ 2000 seconds is way too long!
+
+FOR A BARBERSHOP, USE THESE EXACT STATS:
+- Years: 12+ Years Experience
+- Clients: 2,700+ Satisfied Clients
+- Team: 4 Master Barbers
+- Rating: 98% Client Satisfaction
+
+══════════════════════════════════════════════════════════════
+CRITICAL: INDUSTRY-SPECIFIC DESIGN - NOT A GENERIC TEMPLATE!
+══════════════════════════════════════════════════════════════
+DO NOT use the same layout structure for every industry. A bowling alley should look COMPLETELY DIFFERENT from a law firm.
+
+LAYOUT VARIATION RULES:
+1. READ the industry guidance below and FOLLOW IT - each industry has specific section orders and emphasis.
+2. VARY the section structure based on what matters most to THIS business type:
+   - Entertainment venues: Fun first! Bold colors, large booking CTAs, party packages prominent
+   - Professional services: Trust first! Credentials, testimonials, case studies prominent
+   - Restaurants: Menu first! Food imagery, reservation CTA, ambiance gallery
+   - Fitness: Motivation first! Action imagery, class schedules, membership comparisons
+   - Retail: Products first! Large product grids, shopping CTAs, featured items
+
+3. DIFFERENT industries need DIFFERENT hero treatments:
+   - Fun venues: Neon effects, bold headlines, animated elements, video backgrounds
+   - Professionals: Clean, minimal, trust-focused, subtle imagery
+   - Restaurants: Full-bleed food photography, warm overlays
+   - Fitness: Dynamic action shots, dark/dramatic, motivational text
+   - Retail: Product-focused, clean grids, shopping-oriented
+
+4. SECTION ORDER should vary by industry - don't always do Hero → About → Services → Contact
+
 ══════════════════════════════════════════════════════════════
 CORE VISUAL ARCHETYPE: ${selectedArchetype}
 ══════════════════════════════════════════════════════════════
@@ -1941,29 +3553,45 @@ EFFECTS LIBRARY - ADD POLISH WITH THESE COMPONENTS
 ══════════════════════════════════════════════════════════════
 Import from '../effects' and use these to make pages feel premium:
 
-import { ScrollReveal, AnimatedCounter, StaggeredList, ParallaxSection, TiltCard, GlowEffect } from '../effects';
+import { ScrollReveal, AnimatedCounter, StaggeredList, ParallaxSection, TiltCard, GlowEffect, VideoBackground } from '../effects';
 
 AVAILABLE EFFECTS:
 - <ScrollReveal> - Wrap sections to fade-in on scroll
-- <AnimatedCounter end={500} suffix="+" duration={2000} /> - Animate numbers counting up
+- <AnimatedCounter end={500} suffix="+" duration={2} /> - Animate numbers counting up (duration in SECONDS)
 - <StaggeredList items={array} renderItem={(item) => <Card />} /> - Stagger children animations
 - <ParallaxSection imageSrc="url" height="60vh"> - Parallax background sections
 - <TiltCard> - 3D tilt effect on hover for cards
 - <GlowEffect color="#22c55e"> - Glowing border on hover
+- <VideoBackground videoSrc="url" posterImage="url" overlay="rgba()" height="100vh"> - Video hero backgrounds (HOME PAGE ONLY)
 
 REQUIRED USAGE:
 - Home pages: Use AnimatedCounter for ALL statistics (years, customers, etc.)
 - Home pages: Wrap at least 2 sections with <ScrollReveal>
+- Home pages: If VIDEO URL is provided above, use VideoBackground for the hero!
 - Service/Menu pages: Use ScrollReveal on the cards grid
 - About pages: AnimatedCounter for company stats
 
-EXAMPLE:
+EXAMPLE (Static Hero):
 <ScrollReveal>
   <section style={styles.stats}>
-    <AnimatedCounter end={14} suffix=" Years" duration={2000} />
-    <AnimatedCounter end={5000} suffix="+ Customers" duration={2500} />
+    <AnimatedCounter end={14} suffix=" Years" duration={2} />
+    <AnimatedCounter end={5000} suffix="+ Customers" duration={2.5} />
   </section>
 </ScrollReveal>
+
+EXAMPLE (Video Hero - for HOME PAGE when video URL available):
+<VideoBackground
+  videoSrc="VIDEO_URL_FROM_ABOVE"
+  posterImage="HERO_IMAGE_URL"
+  overlay="linear-gradient(rgba(10, 22, 40, 0.7), rgba(10, 22, 40, 0.85))"
+  height="100vh"
+>
+  <div style={{ textAlign: 'center', color: 'white', maxWidth: '800px', padding: '0 20px' }}>
+    <h1 style={{ fontSize: '48px', marginBottom: '20px' }}>Headline</h1>
+    <p style={{ fontSize: '20px', opacity: 0.9, marginBottom: '30px' }}>Tagline</p>
+    <button style={{ padding: '15px 40px', fontSize: '18px' }}>CTA</button>
+  </div>
+</VideoBackground>
 
 TECHNICAL RULES (MUST FOLLOW):
 1. Use inline styles ONLY: style={{ }} - NO className or Tailwind.
@@ -2048,7 +3676,8 @@ TYPOGRAPHY: Mix of serif (menu feel) and clean sans-serif. Can be more decorativ
 COLORS: Warm tones - burgundy, gold, cream, forest green. Earthy palettes.
 IMAGERY: High-quality food photos, interior shots, chef at work. Real Unsplash food images.
 LAYOUT PATTERNS: Magazine-style, image-heavy, overlapping elements.
-SECTIONS: Featured dishes, chef story, ambiance gallery, reservation CTA, location/hours.`,
+SECTIONS: Featured dishes with photos, chef story, ambiance gallery, reservation CTA prominently placed, location/hours sticky.
+UNIQUE: Menu should be THE STAR - consider tabbed menu categories, hoverable dish cards, or a visual menu grid.`,
 
     'SaaS / B2B Platform': `
 STYLE: Modern, clean, innovative, trustworthy
@@ -2075,7 +3704,156 @@ TYPOGRAPHY: Bold, attention-grabbing headlines. Clean body text.
 COLORS: Brand-dependent but high contrast CTAs. Sale/promo colors (red, orange).
 IMAGERY: Product photography, lifestyle shots, user-generated content style.
 LAYOUT PATTERNS: Grid-heavy, card-based products, sticky CTAs, urgency elements.
-SECTIONS: Featured products, categories, bestsellers, reviews, trust badges, newsletter signup.`,
+SECTIONS: Featured products grid, category tiles, bestsellers carousel, reviews with stars, trust badges, newsletter signup.
+UNIQUE: Product showcase is KING - use large image cards, hover effects, quick-view patterns.`,
+
+    // ENTERTAINMENT & FUN VENUES
+    'Entertainment': `
+STYLE: Bold, playful, energetic, FUN - this is NOT a corporate site!
+HERO: Large action imagery, neon/glow effects, animated elements, video backgrounds work great.
+TYPOGRAPHY: Bold, chunky fonts. Can be playful/quirky. Large impactful headlines.
+COLORS: Bright, bold colors - neon pink, electric blue, bright orange, lime green. Dark backgrounds with glowing accents.
+IMAGERY: People having fun, action shots, neon lights, bowling pins flying, arcade games, celebrations.
+LAYOUT PATTERNS: Asymmetric, overlapping elements, floating cards, gamified UI elements, progress bars, achievement badges.
+SECTIONS: "What's On" with large event cards, pricing/packages with visual comparisons, photo gallery mosaic, party booking CTA (BIG and bold), hours with fun icons.
+UNIQUE: Make it feel like an EXPERIENCE - use hover animations, playful icons, maybe even a mini-game element or leaderboard teaser.`,
+
+    'Bowling Alley': `
+STYLE: Retro-fun meets modern, neon glow, energetic party vibe
+HERO: Bowling action shot with neon overlay effects, lanes lit up, pins flying. Video loop of strikes.
+TYPOGRAPHY: Bold, chunky, retro-inspired fonts. Think arcade vibes. Glowing text effects.
+COLORS: Neon pink, electric blue, black backgrounds, glowing orange accents. Retro color palette.
+IMAGERY: Glowing lanes, pins exploding, people celebrating strikes, cosmic bowling atmosphere.
+LAYOUT PATTERNS: Floating neon-bordered cards, asymmetric grids, gamified elements like score displays.
+SECTIONS: "Book Your Lane" CTA front-and-center, party packages with fun illustrations, cosmic bowling showcase, league info with leaderboard style, arcade/bar area highlight, birthday party section with confetti.
+UNIQUE: Add gamification - maybe a "Strike Counter" AnimatedCounter, glow effects on buttons, retro arcade styling. Make visitors WANT to bowl!`,
+
+    'Arcade': `
+STYLE: Retro gaming, pixel art vibes, neon, 80s throwback with modern twist
+HERO: Arcade cabinet imagery, pixel art elements, neon grids, controller icons.
+TYPOGRAPHY: Pixel fonts for headers, retro gaming typography, 8-bit style numbers.
+COLORS: Neon purple, hot pink, cyan, black backgrounds, CRT scan line effects.
+IMAGERY: Arcade cabinets, joysticks, tokens, high score screens, multiplayer action.
+LAYOUT PATTERNS: Pixel-bordered cards, CRT monitor styled sections, high-score table layouts.
+SECTIONS: Game showcase grid, token/credit packages, party room booking, high scores leaderboard, birthday packages.
+UNIQUE: Add score-like AnimatedCounters, pixel art icons, maybe a fake "INSERT COIN" button.`,
+
+    // FITNESS & WELLNESS
+    'Fitness': `
+STYLE: High-energy, motivational, powerful, action-oriented
+HERO: Dynamic action shots - people mid-workout, weights in motion, intense focus. Dark/dramatic.
+TYPOGRAPHY: Bold, strong, condensed fonts. IMPACT. All-caps for key headlines.
+COLORS: Dark backgrounds (black, charcoal), bold accent (red, orange, electric blue), high contrast.
+IMAGERY: Athletes in action, gym equipment, sweat and determination, transformation photos.
+LAYOUT PATTERNS: Strong geometric shapes, diagonal lines, bold dividers, before/after layouts.
+SECTIONS: Class schedule (prominent, interactive if possible), membership tiers as bold comparison cards, trainer profiles with stats, transformation gallery, free trial CTA.
+UNIQUE: Make it MOTIVATING - use strong action verbs, progress-style layouts, maybe countdown timers for challenges.`,
+
+    'Gym': `
+STYLE: Powerful, results-focused, community-driven, no-nonsense
+HERO: Weight room action, people pushing limits, dramatic lighting on equipment.
+TYPOGRAPHY: Bold condensed sans-serif, industrial feel, strong headlines.
+COLORS: Black, dark gray, red or orange accents, metallic touches.
+IMAGERY: Free weights, cable machines, group classes in action, focused athletes.
+LAYOUT PATTERNS: Grid-based equipment/class showcase, membership comparison tables, strong geometric sections.
+SECTIONS: "Join Now" prominent CTA, membership tiers with clear pricing, class schedule table/tabs, trainer team, equipment showcase, testimonial transformations.
+UNIQUE: Show the RESULTS - before/after transformations, member stats, community achievements.`,
+
+    'Yoga Studio': `
+STYLE: Calm, serene, mindful, balanced, natural
+HERO: Peaceful poses, natural light, plants, minimalist space. Soft, dreamy.
+TYPOGRAPHY: Light, airy fonts. Thin weights. Generous letter-spacing. Lowercase feels right.
+COLORS: Soft sage green, dusty rose, cream, warm white, terracotta, natural tones.
+IMAGERY: Yoga poses in beautiful spaces, nature elements, plants, morning light, meditation.
+LAYOUT PATTERNS: Lots of whitespace, organic shapes, flowing curves, asymmetric balance.
+SECTIONS: Class schedule with easy-to-read times, instructor profiles with philosophy, workshop/retreat highlights, pricing as simple cards, new student offer.
+UNIQUE: Breathe CALM into the design - gentle animations, flowing transitions, peaceful imagery.`,
+
+    // CREATIVE & EDGY INDUSTRIES
+    'Tattoo Studio': `
+STYLE: Bold, edgy, artistic, dark, authentic - NOT corporate or clean
+HERO: Dark, atmospheric studio shot OR dramatic tattoo closeup with moody lighting. Video of tattooing works great.
+TYPOGRAPHY: Bold, often condensed or distressed fonts. Can be slightly grungy. Uppercase for impact.
+COLORS: BLACK is dominant. Accent with crimson red, deep gold, or muted metallics. High contrast.
+IMAGERY: CRITICAL - Use ONLY tattoo-specific images:
+  - Team photos: Tattoo artists AT WORK or portrait shots of tattooed professionals
+  - Gallery: Closeup shots of completed tattoos on skin
+  - NOT yoga people, NOT hairstylists, NOT generic stock photos
+LAYOUT PATTERNS: Dark backgrounds, bold dividers, asymmetric galleries, hoverable portfolio items.
+SECTIONS: Artist profiles (with their specialty styles), portfolio gallery (organized by style - traditional, realism, geometric, etc.), booking/consultation CTA, aftercare info, FAQs, shop policies.
+UNIQUE: The PORTFOLIO is everything - make it visually striking. Show the artists' individual styles. Dark theme with dramatic lighting effects. Instagram integration for latest work.`,
+
+    'Barbershop': `
+STYLE: Masculine, vintage-meets-modern, confident, classic
+HERO: Classic barbershop interior OR barber at work with dramatic lighting. Leather, wood, chrome vibes.
+TYPOGRAPHY: Bold serif or strong sans-serif. Vintage touches work well. All-caps for headings.
+COLORS: Dark backgrounds (charcoal, navy), warm accents (gold, cream, burgundy), masculine palette.
+IMAGERY: Barbers cutting hair, vintage tools, leather chairs, pomade, grooming products.
+LAYOUT PATTERNS: Clean but bold grids, service cards, team profiles with specialties.
+SECTIONS: Services with prices, the barbers (with their chair/specialty), booking CTA prominent, gallery of cuts/styles, shop story.
+UNIQUE: Classic masculinity - think vintage signs, straight razors, leather textures. Make booking EASY.`,
+
+    // PROFESSIONAL SERVICES
+    'Professional Services': `
+STYLE: Trustworthy, credible, sophisticated, results-oriented
+HERO: Clean, minimal, text-focused. Abstract imagery or subtle patterns. No cheesy stock photos.
+TYPOGRAPHY: Professional serif or clean sans-serif. Traditional feels trustworthy.
+COLORS: Navy, charcoal, white, gold/bronze accents. Conservative palette.
+IMAGERY: Abstract, city skylines, handshakes (tasteful), office environments, success imagery.
+LAYOUT PATTERNS: Clean grids, generous whitespace, editorial layouts, credential showcases.
+SECTIONS: Services overview, credentials/certifications, case studies or results stats, team bios, testimonials from named clients, consultation CTA.
+UNIQUE: TRUST is everything - show certifications, years in business, client logos, specific results numbers.`,
+
+    'Consulting': `
+STYLE: Strategic, intellectual, results-driven, premium
+HERO: Minimal, sophisticated. Data visualization elements, abstract strategy imagery.
+TYPOGRAPHY: Clean, modern sans-serif. Professional but not stuffy.
+COLORS: Deep blues, white, subtle gold accents, muted professional palette.
+IMAGERY: Abstract strategy visuals, charts/graphs (stylized), meeting rooms, city views.
+LAYOUT PATTERNS: Case study cards, results metrics prominently displayed, process timelines.
+SECTIONS: Expertise areas, methodology/process steps, case studies with metrics, team credentials, client logos, discovery call CTA.
+UNIQUE: Show EXPERTISE and RESULTS - use AnimatedCounters for client results, showcase methodology.`,
+
+    'Accounting': `
+STYLE: Precise, trustworthy, organized, approachable
+HERO: Clean, professional, maybe abstract financial imagery or clean office.
+TYPOGRAPHY: Clean, highly readable. Numbers should be prominent and well-designed.
+COLORS: Blues, greens (money), white, conservative accents.
+IMAGERY: Abstract financial, organized documents, calculators, professional settings.
+LAYOUT PATTERNS: Clean service grids, pricing tables, credential badges, organized information.
+SECTIONS: Services (tax, bookkeeping, advisory), credentials/certifications, about the team, client testimonials, free consultation CTA, deadline reminders.
+UNIQUE: Emphasize TRUST and ACCURACY - certifications prominent, years experience, client count.`,
+
+    // TRADES & HOME SERVICES
+    'Home Services': `
+STYLE: Reliable, local, trustworthy, urgent-friendly
+HERO: Before/after project photos, workers in action, completed work showcase.
+TYPOGRAPHY: Bold, clear, easy to read. Phone numbers LARGE.
+COLORS: Blues, oranges, greens - trustworthy trade colors. High contrast for CTAs.
+IMAGERY: Completed projects, uniformed workers, tools, happy homeowners, before/after.
+LAYOUT PATTERNS: Service cards with icons, trust badges prominent, quote forms accessible.
+SECTIONS: Services grid with icons, service areas map, trust badges (licensed, insured, bonded), reviews carousel, FREE ESTIMATE button everywhere, emergency service callout.
+UNIQUE: Make CALLING/BOOKING easy - phone number in header, quote forms prominent, urgency messaging.`,
+
+    'Plumbing': `
+STYLE: Emergency-ready, trustworthy, local, fast response
+HERO: Professional plumber at work, or clean bathroom result. Clear "CALL NOW" messaging.
+TYPOGRAPHY: Bold, urgent, phone numbers prominent. Clear service headlines.
+COLORS: Blues (water), white, orange/red for emergency CTAs.
+IMAGERY: Professional work, tools, fixtures, happy homeowners, before/after.
+LAYOUT PATTERNS: Service icons grid, emergency banner, trust badges, quick quote form.
+SECTIONS: Emergency services highlighted, service list, service areas, trust badges, reviews, call-to-action with phone number HUGE.
+UNIQUE: EMERGENCY messaging prominent - "24/7 Service", "Fast Response", "Same Day Service".`,
+
+    'Landscaping': `
+STYLE: Natural, transformative, seasonal, curb appeal focused
+HERO: Beautiful completed landscape, dramatic before/after, lush greenery.
+TYPOGRAPHY: Clean, natural feel. Can be slightly organic/earthy.
+COLORS: Greens, browns, earth tones, with clean white backgrounds.
+IMAGERY: Stunning landscaping projects, seasonal variety, before/after transformations, happy families in yards.
+LAYOUT PATTERNS: Project gallery mosaic, seasonal services, before/after sliders.
+SECTIONS: Services by season, project gallery (large images), design consultation offer, maintenance packages, testimonials with project photos.
+UNIQUE: Show TRANSFORMATIONS - before/after comparisons, gallery of best work, seasonal tips.`,
 
     'default': `
 STYLE: Professional, modern, trustworthy
@@ -2087,7 +3865,58 @@ LAYOUT PATTERNS: Standard sections with clear visual breaks
 SECTIONS: Hero, features/services, about snippet, testimonials, CTA`
   };
 
-  return guidance[industryName] || guidance['default'];
+  // Try exact match first, then partial match
+  if (guidance[industryName]) {
+    return guidance[industryName];
+  }
+
+  // Try partial matching for broader categories
+  const lowerName = (industryName || '').toLowerCase();
+
+  if (lowerName.includes('bowl') || lowerName.includes('arcade') || lowerName.includes('entertainment') || lowerName.includes('fun') || lowerName.includes('laser') || lowerName.includes('trampoline') || lowerName.includes('go-kart') || lowerName.includes('mini golf')) {
+    return guidance['Entertainment'];
+  }
+  if (lowerName.includes('gym') || lowerName.includes('fitness') || lowerName.includes('crossfit') || lowerName.includes('workout')) {
+    return guidance['Fitness'];
+  }
+  if (lowerName.includes('yoga') || lowerName.includes('pilates') || lowerName.includes('meditation')) {
+    return guidance['Yoga Studio'];
+  }
+  if (lowerName.includes('restaurant') || lowerName.includes('food') || lowerName.includes('dining') || lowerName.includes('cafe') || lowerName.includes('bistro')) {
+    return guidance['Restaurant / Food Service'];
+  }
+  if (lowerName.includes('law') || lowerName.includes('legal') || lowerName.includes('attorney')) {
+    return guidance['Law Firm'];
+  }
+  if (lowerName.includes('consult') || lowerName.includes('advisory')) {
+    return guidance['Consulting'];
+  }
+  if (lowerName.includes('account') || lowerName.includes('tax') || lowerName.includes('cpa') || lowerName.includes('bookkeep')) {
+    return guidance['Accounting'];
+  }
+  if (lowerName.includes('plumb') || lowerName.includes('hvac') || lowerName.includes('electric') || lowerName.includes('roof')) {
+    return guidance['Home Services'];
+  }
+  if (lowerName.includes('landscap') || lowerName.includes('lawn') || lowerName.includes('garden')) {
+    return guidance['Landscaping'];
+  }
+  if (lowerName.includes('health') || lowerName.includes('medical') || lowerName.includes('clinic') || lowerName.includes('dental')) {
+    return guidance['Healthcare / Medical'];
+  }
+  if (lowerName.includes('shop') || lowerName.includes('store') || lowerName.includes('retail') || lowerName.includes('ecommerce') || lowerName.includes('boutique')) {
+    return guidance['E-Commerce / Retail'];
+  }
+  if (lowerName.includes('saas') || lowerName.includes('software') || lowerName.includes('platform') || lowerName.includes('app') || lowerName.includes('tech')) {
+    return guidance['SaaS / B2B Platform'];
+  }
+  if (lowerName.includes('tattoo') || lowerName.includes('ink') || lowerName.includes('body art') || lowerName.includes('piercing')) {
+    return guidance['Tattoo Studio'];
+  }
+  if (lowerName.includes('barber') || lowerName.includes('grooming')) {
+    return guidance['Barbershop'];
+  }
+
+  return guidance['default'];
 }
 
 function getPageRequirements(pageId) {
@@ -2222,7 +4051,98 @@ function getPageSpecificInstructions(pageId, colors, layout) {
   const heroHeight = layout.heroHeight || '70vh';
   const primary = colors.primary || '#0a1628';
   const accent = colors.accent || '#c9a962';
-  
+
+  // Page-specific animation styles - IMPORTANT: Each page should have DIFFERENT animations
+  const pageAnimations = {
+    home: `
+ANIMATION STYLE FOR HOME - "DRAMATIC ENTRANCE":
+- Wrap hero content in <ScrollReveal animation="fade-up" delay={0.2}>
+- Use <ParallaxSection> for the hero background image
+- Stats: Use <AnimatedCounter> with staggered delays (0, 0.2, 0.4)
+- Feature cards: Wrap in <StaggeredList> for sequential reveal
+- Add subtle <GlowEffect> to primary CTA button`,
+
+    about: `
+ANIMATION STYLE FOR ABOUT - "STORYTELLING FLOW":
+- Hero: <ScrollReveal animation="fade-in" delay={0.1}> - simple, elegant
+- Story section: Use <ScrollReveal animation="slide-right"> for text, <ScrollReveal animation="slide-left"> for images
+- Values cards: <StaggeredList delay={0.15}> - gentle stagger
+- Timeline elements: Alternate <ScrollReveal animation="slide-left"> and "slide-right"
+- Team photos: <TiltCard> for subtle 3D hover effect`,
+
+    services: `
+ANIMATION STYLE FOR SERVICES - "CARD CASCADE":
+- Hero: Minimal animation - just <ScrollReveal animation="fade-in">
+- Service cards: Use <StaggeredList delay={0.1}> with <TiltCard> wrappers
+- Process steps: <ScrollReveal animation="zoom-in"> for each step icon
+- Pricing tiers: Stagger with delays 0.1, 0.2, 0.3
+- NO parallax on this page - keep it professional and scannable`,
+
+    gallery: `
+ANIMATION STYLE FOR GALLERY - "MASONRY REVEAL":
+- Hero: Short, simple <ScrollReveal animation="fade-in">
+- Gallery images: <StaggeredList delay={0.05}> for rapid cascade effect
+- Each image: Add subtle hover zoom (transform: scale(1.03))
+- Lightbox overlay: CSS transition for smooth open
+- Categories: Horizontal scroll or filter pills with fade transitions`,
+
+    contact: `
+ANIMATION STYLE FOR CONTACT - "CLEAN & DIRECT":
+- Hero: Simple <ScrollReveal animation="fade-in">
+- Contact form: <ScrollReveal animation="slide-up"> - single reveal for whole form
+- Info cards: <ScrollReveal animation="fade-in" delay={0.2}> - subtle
+- Map (if present): Fade in after form loads
+- MINIMAL animations - users want to contact you, not watch effects`,
+
+    pricing: `
+ANIMATION STYLE FOR PRICING - "SPOTLIGHT TIERS":
+- Hero: <ScrollReveal animation="fade-in">
+- Pricing cards: <StaggeredList> with center card having <GlowEffect>
+- Featured tier: Add subtle pulsing border animation (CSS @keyframes)
+- Feature checkmarks: Stagger within each card
+- Comparison table rows: <ScrollReveal animation="fade-up"> per row`,
+
+    testimonials: `
+ANIMATION STYLE FOR TESTIMONIALS - "QUOTE THEATER":
+- Hero: <ScrollReveal animation="fade-in">
+- Quote cards: <StaggeredList delay={0.15}> with <TiltCard> wrappers
+- Large quote icons: <ScrollReveal animation="zoom-in">
+- Star ratings: Animate in sequence (CSS @keyframes)
+- Client photos: Subtle border glow on hover`,
+
+    team: `
+ANIMATION STYLE FOR TEAM - "PROFESSIONAL INTRODUCTION":
+- Hero: <ScrollReveal animation="fade-in">
+- Team cards: <StaggeredList delay={0.12}>
+- Photos: <TiltCard> with subtle 3D effect on hover
+- Social icons: Fade in on card hover (CSS transition)
+- Bio text: <ScrollReveal animation="fade-up"> per section`,
+
+    menu: `
+ANIMATION STYLE FOR MENU - "APPETIZING DISPLAY":
+- Hero: <ParallaxSection> with food imagery background
+- Menu categories: <ScrollReveal animation="slide-up"> for headers
+- Menu items: <StaggeredList delay={0.08}> for rapid display
+- Prices: <AnimatedCounter> for any featured prices
+- Food images: Scale-up hover effect (transform: scale(1.05))`,
+
+    booking: `
+ANIMATION STYLE FOR BOOKING - "GUIDED EXPERIENCE":
+- Hero: Simple <ScrollReveal animation="fade-in">
+- Booking form: <ScrollReveal animation="slide-up">
+- Available slots: Subtle pulse animation on available times
+- Calendar: CSS transition for date selection
+- Confirmation: <ScrollReveal animation="zoom-in"> for success state`,
+
+    faq: `
+ANIMATION STYLE FOR FAQ - "ACCORDION FLOW":
+- Hero: <ScrollReveal animation="fade-in">
+- FAQ items: <StaggeredList delay={0.08}>
+- Accordion expand: CSS max-height transition (0.3s ease)
+- Plus/minus icons: Rotate transform on toggle
+- Related questions: Fade in at bottom`
+  };
+
   const instructions = {
     home: `
 HOME PAGE REQUIREMENTS:
@@ -2236,8 +4156,9 @@ HOME PAGE REQUIREMENTS:
 - INTRO SECTION: White/light background, value proposition, max-width 800px
 - FEATURES: 3-4 cards with accent-colored Lucide icons
 - TESTIMONIAL: Single quote with large Quote icon, italic text
-- CTA SECTION: Dark background, compelling headline, accent button`,
-    
+- CTA SECTION: Dark background, compelling headline, accent button
+${pageAnimations.home}`,
+
     about: `
 ABOUT PAGE REQUIREMENTS:
 - HERO (50vh): Solid dark background (${primary}), centered content
@@ -2247,8 +4168,9 @@ ABOUT PAGE REQUIREMENTS:
 - STORY SECTION: Light bg, two columns - text left, pull quote right
 - VALUES: 4 cards with icons (Shield, Target, Users, Award)
 - CREDENTIALS: Subtle section with certifications
-- CTA at bottom`,
-    
+- CTA at bottom
+${pageAnimations.about}`,
+
     services: `
 SERVICES PAGE REQUIREMENTS:
 - HERO (40vh): Gradient background, centered text
@@ -2256,8 +4178,9 @@ SERVICES PAGE REQUIREMENTS:
 - SERVICE CARDS: Numbered (01, 02, 03, 04), accent-colored numbers
 - Each card: title, description, bullet points with Check icons
 - PROCESS SECTION: 4-step visual flow
-- CTA: Accent button to contact`,
-    
+- CTA: Accent button to contact
+${pageAnimations.services}`,
+
     contact: `
 CONTACT PAGE REQUIREMENTS:
 - HERO (30vh): Dark background, "GET IN TOUCH" label, simple headline
@@ -2265,16 +4188,18 @@ CONTACT PAGE REQUIREMENTS:
 - Form: First name, Last name, Email, Phone, Company, Message
 - Clean inputs: subtle borders, accent focus state, accent submit button
 - Info card: MapPin, Phone, Mail, Clock icons with details
-- Business hours displayed`,
-    
+- Business hours displayed
+${pageAnimations.contact}`,
+
     pricing: `
 PRICING PAGE REQUIREMENTS:
 - HERO (35vh): Dark background, "PRICING" label
 - Pricing cards: featured tier with accent border
 - Check icons for features in accent color
 - Clear pricing, CTA buttons
-- FAQ section below if space`,
-    
+- FAQ section below if space
+${pageAnimations.pricing}`,
+
     faq: `
 FAQ PAGE REQUIREMENTS:
 - HERO (25vh): Light gray background, dark text
@@ -2282,30 +4207,52 @@ FAQ PAGE REQUIREMENTS:
 - Accordion items with Plus/Minus icons (useState for expand/collapse)
 - 8-10 relevant questions with detailed answers
 - Accent color on expanded item border
-- CTA at bottom for additional questions`,
-    
+- CTA at bottom for additional questions
+${pageAnimations.faq}`,
+
     testimonials: `
 TESTIMONIALS PAGE REQUIREMENTS:
 - HERO (30vh): Dark background, "CLIENT SUCCESS" label
 - Large testimonial cards with Quote icon
 - Client initials in accent circle, name, title
 - 4-6 testimonials in grid
-- Stats section with success metrics`,
-    
+- Stats section with success metrics
+${pageAnimations.testimonials}`,
+
     team: `
 TEAM PAGE REQUIREMENTS:
 - HERO (40vh): Dark background, "OUR TEAM" label
 - Team cards: initials in circle, name, title in accent
 - 3-4 team members with short bios
-- Credentials below each`,
-    
+- Credentials below each
+${pageAnimations.team}`,
+
     booking: `
 BOOKING PAGE REQUIREMENTS:
 - HERO (30vh): Dark background, "SCHEDULE" label
 - Booking form with service selection, date preference
 - Contact fields
 - Right side: what to expect, benefits
-- Accent submit button`
+- Accent submit button
+${pageAnimations.booking}`,
+
+    gallery: `
+GALLERY PAGE REQUIREMENTS:
+- HERO (30vh): Dark background, "OUR WORK" or "GALLERY" label
+- Gallery grid: masonry or uniform grid layout
+- Lightbox on click for full-size images
+- Categories/filters if multiple types of work
+- High-quality images showcasing best work
+${pageAnimations.gallery}`,
+
+    menu: `
+MENU PAGE REQUIREMENTS:
+- HERO (35vh): Food imagery background with overlay
+- Menu categories clearly labeled
+- Items with descriptions and prices
+- Dietary icons (vegetarian, gluten-free, etc.)
+- Featured/popular items highlighted
+${pageAnimations.menu}`
   };
   
   return instructions[pageId] || `
@@ -2328,6 +4275,81 @@ Use their actual product images: ${images.slice(0, 8).map(i => i.src).join(', ')
   return `${pageId.toUpperCase()} PAGE - Create appropriate sections with their branding.`;
 }
 
+/**
+ * Build page prompt specifically for Orchestrator mode
+ * Streamlined version optimized for orchestrator-generated businesses
+ */
+function buildOrchestratorPagePrompt(pageId, componentName, otherPages, description, promptConfig) {
+  const businessName = description.businessName || promptConfig.businessName || 'Our Business';
+  const tagline = description.tagline || '';
+  const cta = description.callToAction || 'Get Started';
+  const industry = promptConfig.industry?.name || description.industryKey || 'business';
+  const location = description.location || '';
+  const colors = promptConfig.colors || { primary: '#6366f1', accent: '#06b6d4' };
+
+  // Get industry-specific images
+  const industryImages = getIndustryImageUrls(industry);
+
+  const pageTypeGuide = {
+    home: `HERO SECTION with impactful headline, tagline, and CTA button. FEATURES/SERVICES preview. TESTIMONIALS. About preview. Contact CTA.`,
+    about: `Company story and mission. Team section with photos. Values/philosophy. Timeline or milestones. Trust badges.`,
+    services: `Service cards with icons, descriptions, pricing hints. Process/how-it-works section. FAQ. Service area coverage.`,
+    contact: `Contact form (name, email, phone, message). Business hours. Location map placeholder. Phone and email displayed prominently.`,
+    pricing: `Pricing tiers/packages. Feature comparison. FAQ about pricing. Money-back guarantee badge. CTA to contact.`,
+    gallery: `Image grid showcasing work. Before/after if applicable. Category filters. Lightbox-style presentation.`,
+    'book-online': `Booking form or calendar integration placeholder. Service selection. Date/time picker mockup. Confirmation info.`,
+    'service-areas': `Map or list of service areas. Coverage radius. Area-specific info. CTA per area.`,
+    team: `Team member cards with photos, names, roles, bios. Company culture section.`,
+    testimonials: `Customer reviews with photos, names, ratings. Video testimonial placeholders. Trust indicators.`,
+    faq: `Accordion-style FAQ sections organized by category. Contact CTA for more questions.`,
+    blog: `Blog post previews in card grid. Categories sidebar. Search placeholder. Featured posts.`
+  };
+
+  const pageGuide = pageTypeGuide[pageId] || `Create appropriate content sections for a ${pageId} page.`;
+
+  return `You are an expert React developer creating a ${pageId.toUpperCase()} page for "${businessName}".
+
+BUSINESS CONTEXT:
+- Business Name: ${businessName}
+- Industry: ${industry}
+- Tagline: "${tagline}"
+- Primary CTA: "${cta}"
+- Location: ${location || 'Not specified'}
+
+PAGE REQUIREMENTS:
+${pageGuide}
+
+OTHER PAGES IN THIS SITE: ${otherPages || 'none'}
+
+DESIGN SYSTEM:
+- Primary Color: ${colors.primary}
+- Accent Color: ${colors.accent}
+- Use modern, clean design with plenty of whitespace
+- Mobile-first responsive design
+- Smooth hover animations
+
+IMAGES TO USE:
+- Hero: ${industryImages.hero}
+- Gallery: ${(industryImages.gallery || []).slice(0, 4).join(', ')}
+- Services: ${(industryImages.services || []).slice(0, 3).join(', ')}
+
+TECHNICAL REQUIREMENTS:
+1. Export a single React functional component named ${componentName}Page
+2. Use inline styles with JavaScript objects (no CSS imports except theme.css)
+3. Import { Link } from 'react-router-dom' for navigation
+4. Use semantic HTML (header, main, section, footer)
+5. Include responsive breakpoints using CSS-in-JS
+6. Add smooth scroll behavior for anchor links
+
+CRITICAL:
+- Return ONLY the JSX code, no markdown code blocks
+- The component must be a complete, working React component
+- Include proper export default statement
+- Use actual image URLs provided, not placeholders
+
+Generate the complete ${componentName}Page.jsx component:`;
+}
+
 function buildFallbackPage(componentName, pageId, promptConfig) {
   const colors = promptConfig?.colors || { primary: '#0a1628', text: '#1a1a2e', textMuted: '#4a5568' };
   const typography = promptConfig?.typography || { heading: 'Georgia, serif' };
@@ -2348,10 +4370,176 @@ const ${componentName}Page = () => {
 export default ${componentName}Page;`;
 }
 
+// ============================================
+// INDUSTRY HEADER CONFIGURATIONS
+// ============================================
+function getIndustryHeaderConfig(industry) {
+  const lowerIndustry = (industry || '').toLowerCase();
+
+  // Tattoo/Creative/Edgy Industries (Tattoo, Piercing, Motorcycle, Custom)
+  if (lowerIndustry.includes('tattoo') || lowerIndustry.includes('ink') ||
+      lowerIndustry.includes('piercing') || lowerIndustry.includes('motorcycle') ||
+      lowerIndustry.includes('custom') || lowerIndustry.includes('body art')) {
+    return {
+      type: 'creative',
+      showEmergencyBanner: false,
+      primaryCta: { text: 'Book Consultation', icon: 'Calendar', action: 'link', href: '/booking' },
+      secondaryCta: { text: 'View Portfolio', icon: 'Image', action: 'link', href: '/gallery' },
+      headerStyle: 'edgy',
+      glowEffect: true,
+      mobilePhoneVisible: false
+    };
+  }
+
+  // Barbershop/Grooming - masculine, bold
+  if (lowerIndustry.includes('barber') || lowerIndustry.includes('grooming')) {
+    return {
+      type: 'barbershop',
+      showEmergencyBanner: false,
+      primaryCta: { text: 'Book Now', icon: 'Calendar', action: 'link', href: '/booking' },
+      secondaryCta: { text: 'Our Services', icon: 'Scissors', action: 'link', href: '/services' },
+      headerStyle: 'bold',
+      mobilePhoneVisible: true
+    };
+  }
+
+  // Emergency Services (Plumber, HVAC, Electrician, Locksmith)
+  if (lowerIndustry.includes('plumb') || lowerIndustry.includes('hvac') ||
+      lowerIndustry.includes('electric') || lowerIndustry.includes('locksmith') ||
+      lowerIndustry.includes('roofing') || lowerIndustry.includes('emergency')) {
+    return {
+      type: 'emergency',
+      showEmergencyBanner: true,
+      emergencyText: '24/7 Emergency Service',
+      showPhoneProminent: true,
+      phoneNumber: '(555) 123-4567',
+      primaryCta: { text: 'Call Now', icon: 'Phone', action: 'tel' },
+      secondaryCta: { text: 'Get Quote', icon: 'FileText', action: 'link', href: '/contact' },
+      showBadge: true,
+      badgeText: '24/7',
+      headerStyle: 'emergency',
+      mobilePhoneVisible: true
+    };
+  }
+
+  // Entertainment (Bowling, Arcade, Mini Golf, Trampoline)
+  if (lowerIndustry.includes('bowl') || lowerIndustry.includes('arcade') ||
+      lowerIndustry.includes('golf') || lowerIndustry.includes('trampoline') ||
+      lowerIndustry.includes('laser') || lowerIndustry.includes('entertainment') ||
+      lowerIndustry.includes('fun') || lowerIndustry.includes('go-kart')) {
+    return {
+      type: 'entertainment',
+      showEmergencyBanner: false,
+      showSocialIcons: true,
+      primaryCta: { text: 'Book Now', icon: 'Calendar', action: 'link', href: '/book' },
+      secondaryCta: { text: 'Parties', icon: 'PartyPopper', action: 'link', href: '/parties' },
+      headerStyle: 'playful',
+      glowEffect: true,
+      mobilePhoneVisible: false
+    };
+  }
+
+  // Restaurants/Food
+  if (lowerIndustry.includes('restaurant') || lowerIndustry.includes('food') ||
+      lowerIndustry.includes('dining') || lowerIndustry.includes('cafe') ||
+      lowerIndustry.includes('bistro') || lowerIndustry.includes('bar') ||
+      lowerIndustry.includes('grill') || lowerIndustry.includes('kitchen')) {
+    return {
+      type: 'restaurant',
+      showEmergencyBanner: false,
+      showHours: true,
+      hoursText: 'Open today: 11am - 10pm',
+      showLocation: true,
+      primaryCta: { text: 'Order Online', icon: 'ShoppingBag', action: 'link', href: '/order' },
+      secondaryCta: { text: 'Reservations', icon: 'Calendar', action: 'link', href: '/reservations' },
+      headerStyle: 'warm',
+      mobilePhoneVisible: true
+    };
+  }
+
+  // Professional Services (Law, Accounting, Consulting)
+  if (lowerIndustry.includes('law') || lowerIndustry.includes('legal') ||
+      lowerIndustry.includes('attorney') || lowerIndustry.includes('account') ||
+      lowerIndustry.includes('consult') || lowerIndustry.includes('advisory') ||
+      lowerIndustry.includes('financial') || lowerIndustry.includes('cpa')) {
+    return {
+      type: 'professional',
+      showEmergencyBanner: false,
+      showCredentials: true,
+      credentialsText: 'BBB A+ Rated',
+      primaryCta: { text: 'Free Consultation', icon: 'Calendar', action: 'link', href: '/contact' },
+      headerStyle: 'minimal',
+      mobilePhoneVisible: true
+    };
+  }
+
+  // Retail/E-commerce
+  if (lowerIndustry.includes('retail') || lowerIndustry.includes('ecommerce') ||
+      lowerIndustry.includes('shop') || lowerIndustry.includes('store') ||
+      lowerIndustry.includes('boutique')) {
+    return {
+      type: 'retail',
+      showEmergencyBanner: false,
+      showSearch: true,
+      showCart: true,
+      primaryCta: { text: 'Shop Now', icon: 'ShoppingBag', action: 'link', href: '/shop' },
+      showPromoBanner: true,
+      promoText: 'Free Shipping on Orders $50+',
+      headerStyle: 'modern',
+      mobilePhoneVisible: false
+    };
+  }
+
+  // Healthcare/Medical
+  if (lowerIndustry.includes('health') || lowerIndustry.includes('medical') ||
+      lowerIndustry.includes('clinic') || lowerIndustry.includes('dental') ||
+      lowerIndustry.includes('doctor') || lowerIndustry.includes('hospital') ||
+      lowerIndustry.includes('therapy') || lowerIndustry.includes('wellness')) {
+    return {
+      type: 'healthcare',
+      showEmergencyBanner: false,
+      showPhoneProminent: true,
+      phoneNumber: '(555) 123-4567',
+      primaryCta: { text: 'Book Appointment', icon: 'Calendar', action: 'link', href: '/appointment' },
+      secondaryCta: { text: 'Patient Portal', icon: 'User', action: 'link', href: '/portal' },
+      showCredentials: true,
+      credentialsText: 'HIPAA Compliant',
+      headerStyle: 'calming',
+      mobilePhoneVisible: true
+    };
+  }
+
+  // Fitness/Gym
+  if (lowerIndustry.includes('fitness') || lowerIndustry.includes('gym') ||
+      lowerIndustry.includes('yoga') || lowerIndustry.includes('crossfit') ||
+      lowerIndustry.includes('workout') || lowerIndustry.includes('personal train')) {
+    return {
+      type: 'fitness',
+      showEmergencyBanner: false,
+      primaryCta: { text: 'Start Free Trial', icon: 'Zap', action: 'link', href: '/join' },
+      secondaryCta: { text: 'Class Schedule', icon: 'Calendar', action: 'link', href: '/schedule' },
+      headerStyle: 'bold',
+      mobilePhoneVisible: false
+    };
+  }
+
+  // Default
+  return {
+    type: 'default',
+    showEmergencyBanner: false,
+    primaryCta: { text: 'Contact Us', icon: 'Mail', action: 'link', href: '/contact' },
+    headerStyle: 'default',
+    mobilePhoneVisible: false
+  };
+}
+
 function buildAppJsx(name, pages, promptConfig, industry) {
   const colors = promptConfig?.colors || { primary: '#0a1628', text: '#1a1a2e', textMuted: '#4a5568' };
   const typography = promptConfig?.typography || { heading: "Georgia, 'Times New Roman', serif" };
-  
+
+  // Get industry-specific header configuration
+  const headerConfig = getIndustryHeaderConfig(industry);
+
   // Industries that require authentication
   const authRequiredIndustries = ['survey-rewards', 'saas', 'ecommerce', 'collectibles', 'healthcare', 'family'];
   const needsAuth = authRequiredIndustries.includes(industry);
@@ -2366,20 +4554,20 @@ function buildAppJsx(name, pages, promptConfig, industry) {
   
   const routeElements = pages.map(p => {
     const componentName = toComponentName(p) + 'Page';
-    const routePath = p === 'home' ? '/' : `/${p}`;
-    const isProtected = needsAuth && protectedPages.includes(p);
-    
+    const routePath = toRoutePath(p);
+    const isProtected = needsAuth && protectedPages.includes(p.toLowerCase().replace(/\s+/g, '-'));
+
     if (isProtected) {
       return `              <Route path="${routePath}" element={<ProtectedRoute><${componentName} /></ProtectedRoute>} />`;
     }
     return `              <Route path="${routePath}" element={<${componentName} />} />`;
   }).join('\n');
-  
+
   // Filter out login/register from nav links
-  const navPages = pages.filter(p => !['login', 'register'].includes(p));
+  const navPages = pages.filter(p => !['login', 'register'].includes(p.toLowerCase()));
   const navLinks = navPages.map(p => {
     const label = toNavLabel(p);
-    const navPath = p === 'home' ? '/' : `/${p}`;
+    const navPath = toRoutePath(p);
     return `            <Link to="${navPath}" style={styles.navLink}>${label}</Link>`;
   }).join('\n');
   
@@ -2460,19 +4648,113 @@ function AuthButtons() {
 
   const appWrapper = needsAuth ? ['<AuthProvider>', '</AuthProvider>'] : ['', ''];
 
+  // Build industry-specific header icons
+  const headerIcons = ['Menu', 'X'];
+  if (headerConfig.primaryCta?.icon) headerIcons.push(headerConfig.primaryCta.icon);
+  if (headerConfig.secondaryCta?.icon) headerIcons.push(headerConfig.secondaryCta.icon);
+  if (headerConfig.showPhoneProminent) headerIcons.push('Phone');
+  if (headerConfig.showSearch) headerIcons.push('Search');
+  if (headerConfig.showCart) headerIcons.push('ShoppingCart');
+  if (headerConfig.showSocialIcons) headerIcons.push('Facebook', 'Instagram');
+  if (headerConfig.showHours) headerIcons.push('Clock');
+  if (headerConfig.showLocation) headerIcons.push('MapPin');
+  if (headerConfig.showCredentials) headerIcons.push('Shield');
+  const uniqueIcons = [...new Set(headerIcons)].join(', ');
+
+  // Build emergency banner if needed
+  const emergencyBanner = headerConfig.showEmergencyBanner ? `
+      {/* Emergency Banner */}
+      <div style={styles.emergencyBanner}>
+        <span style={styles.emergencyBadge}>${headerConfig.badgeText || '24/7'}</span>
+        <span style={styles.emergencyText}>${headerConfig.emergencyText || '24/7 Emergency Service'}</span>
+        <a href="tel:${(headerConfig.phoneNumber || '').replace(/[^0-9]/g, '')}" style={styles.emergencyPhone}>
+          <Phone size={16} />
+          ${headerConfig.phoneNumber || '(555) 123-4567'}
+        </a>
+      </div>` : '';
+
+  // Build promo banner for retail
+  const promoBanner = headerConfig.showPromoBanner ? `
+      {/* Promo Banner */}
+      <div style={styles.promoBanner}>
+        ${headerConfig.promoText || 'Free Shipping on Orders $50+'}
+      </div>` : '';
+
+  // Build primary CTA button
+  const primaryCtaCode = headerConfig.primaryCta ? `
+            ${headerConfig.primaryCta.action === 'tel'
+              ? `<a href="tel:${(headerConfig.phoneNumber || '').replace(/[^0-9]/g, '')}" style={styles.primaryCta}>
+              <${headerConfig.primaryCta.icon} size={16} />
+              ${headerConfig.primaryCta.text}
+            </a>`
+              : `<Link to="${headerConfig.primaryCta.href || '/contact'}" style={styles.primaryCta}>
+              <${headerConfig.primaryCta.icon} size={16} />
+              ${headerConfig.primaryCta.text}
+            </Link>`
+            }` : '';
+
+  // Build secondary CTA button
+  const secondaryCtaCode = headerConfig.secondaryCta ? `
+            <Link to="${headerConfig.secondaryCta.href || '/contact'}" style={styles.secondaryCta}>
+              <${headerConfig.secondaryCta.icon} size={16} />
+              ${headerConfig.secondaryCta.text}
+            </Link>` : '';
+
+  // Build phone button for mobile
+  const mobilePhoneBtn = headerConfig.mobilePhoneVisible && headerConfig.phoneNumber ? `
+          <a href="tel:${(headerConfig.phoneNumber || '').replace(/[^0-9]/g, '')}" style={styles.mobilePhoneBtn}>
+            <Phone size={20} />
+          </a>` : '';
+
+  // Build search for retail
+  const searchBox = headerConfig.showSearch ? `
+            <div style={styles.searchBox}>
+              <Search size={18} style={styles.searchIcon} />
+              <input type="text" placeholder="Search..." style={styles.searchInput} />
+            </div>` : '';
+
+  // Build cart for retail
+  const cartIcon = headerConfig.showCart ? `
+            <Link to="/cart" style={styles.cartLink}>
+              <ShoppingCart size={20} />
+              <span style={styles.cartBadge}>0</span>
+            </Link>` : '';
+
+  // Build hours for restaurant
+  const hoursDisplay = headerConfig.showHours ? `
+            <span style={styles.hoursDisplay}>
+              <Clock size={14} />
+              ${headerConfig.hoursText || 'Open today: 11am - 10pm'}
+            </span>` : '';
+
+  // Build credentials badge
+  const credentialsBadge = headerConfig.showCredentials ? `
+            <span style={styles.credentialsBadge}>
+              <Shield size={14} />
+              ${headerConfig.credentialsText || 'Certified'}
+            </span>` : '';
+
+  // Build social icons for entertainment
+  const socialIcons = headerConfig.showSocialIcons ? `
+            <div style={styles.socialIcons}>
+              <a href="#" style={styles.socialLink}><Facebook size={18} /></a>
+              <a href="#" style={styles.socialLink}><Instagram size={18} /></a>
+            </div>` : '';
+
   return `/**
  * ${name} - Frontend App
  * Auto-generated by Module Library Assembler with AI
+ * Header Type: ${headerConfig.type}
  */
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Menu, X } from 'lucide-react';
+import { ${uniqueIcons} } from 'lucide-react';
 import './theme.css';
 // Page imports
 ${routeImports}
 ${authImports}
 ${authButtonsComponent}
-// Mobile menu wrapper component
+// Mobile menu wrapper component with industry-specific header
 function NavWrapper({ children }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
@@ -2489,36 +4771,49 @@ function NavWrapper({ children }) {
   }, [location]);
 
   return (
-    <>
+    <>${emergencyBanner}${promoBanner}
       <nav style={styles.nav}>
         <Link to="/" style={styles.navBrand}>
           <span style={styles.brandText}>${name.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()}</span>
         </Link>
-        
+
         {isMobile ? (
-          <button 
-            onClick={() => setMenuOpen(!menuOpen)} 
-            style={styles.hamburger}
-            aria-label="Toggle menu"
-          >
-            {menuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+          <div style={styles.mobileActions}>${mobilePhoneBtn}
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              style={styles.hamburger}
+              aria-label="Toggle menu"
+            >
+              {menuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
         ) : (
           <>
+            ${headerConfig.type === 'retail' ? searchBox : ''}
             <div style={styles.navLinks}>
 ${navLinks}
             </div>
-            <div style={styles.navAuth}>
+            <div style={styles.navActions}>
+              ${hoursDisplay}
+              ${credentialsBadge}
+              ${socialIcons}
+              ${cartIcon}
+              ${primaryCtaCode}
+              ${secondaryCtaCode}
 ${authNavButtons}
             </div>
           </>
         )}
       </nav>
-      
+
       {isMobile && menuOpen && (
         <div style={styles.mobileMenuOverlay} onClick={() => setMenuOpen(false)}>
           <div style={styles.mobileMenu} onClick={(e) => e.stopPropagation()}>
 ${navLinks.split('\n').map(link => link.replace('styles.navLink', 'styles.mobileNavLink')).join('\n')}
+            <div style={styles.mobileCtas}>
+              ${headerConfig.primaryCta ? `<Link to="${headerConfig.primaryCta.href || '/contact'}" style={styles.mobilePrimaryCta}>${headerConfig.primaryCta.text}</Link>` : ''}
+              ${headerConfig.secondaryCta ? `<Link to="${headerConfig.secondaryCta.href || '/contact'}" style={styles.mobileSecondaryCta}>${headerConfig.secondaryCta.text}</Link>` : ''}
+            </div>
             <div style={styles.mobileAuthButtons}>
 ${authNavButtons}
             </div>
@@ -2552,6 +4847,9 @@ ${routeElements}${authRoutes}
     ${appWrapper[1]}
   );
 }
+// Calculate top offset based on banners
+const topOffset = ${headerConfig.showEmergencyBanner ? '100' : headerConfig.showPromoBanner ? '92' : '60'};
+
 const styles = {
   app: {
     minHeight: '100vh',
@@ -2561,53 +4859,235 @@ const styles = {
     color: '${colors.text}',
     fontFamily: "system-ui, -apple-system, sans-serif",
   },
+  // Emergency banner (for service businesses)
+  emergencyBanner: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    background: 'linear-gradient(90deg, #dc2626 0%, #b91c1c 100%)',
+    color: '#ffffff',
+    padding: '8px 24px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '16px',
+    zIndex: 1001,
+    fontSize: '14px',
+    fontWeight: '500',
+  },
+  emergencyBadge: {
+    background: '#ffffff',
+    color: '#dc2626',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    fontSize: '12px',
+    fontWeight: '700',
+  },
+  emergencyText: {
+    display: 'none',
+    '@media (min-width: 640px)': { display: 'inline' },
+  },
+  emergencyPhone: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: '#ffffff',
+    textDecoration: 'none',
+    fontWeight: '700',
+    background: 'rgba(255,255,255,0.2)',
+    padding: '4px 12px',
+    borderRadius: '4px',
+  },
+  // Promo banner (for retail)
+  promoBanner: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    background: '${colors.primary}',
+    color: '#ffffff',
+    padding: '8px 24px',
+    textAlign: 'center',
+    zIndex: 1001,
+    fontSize: '13px',
+    fontWeight: '500',
+  },
   nav: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '16px 24px',
-    background: '#ffffff',
-    borderBottom: '1px solid rgba(10, 22, 40, 0.1)',
+    background: '${['playful', 'edgy', 'bold'].includes(headerConfig.headerStyle) ? (headerConfig.headerStyle === 'edgy' ? 'linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%)' : headerConfig.headerStyle === 'bold' ? '#1a1a2e' : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)') : '#ffffff'}',
+    borderBottom: '${['playful', 'edgy', 'bold'].includes(headerConfig.headerStyle) ? 'none' : '1px solid rgba(10, 22, 40, 0.1)'}',
     position: 'fixed',
-    top: 0,
+    top: ${headerConfig.showEmergencyBanner ? '40px' : headerConfig.showPromoBanner ? '32px' : '0'},
     left: 0,
     right: 0,
     width: '100%',
     zIndex: 1000,
     boxSizing: 'border-box',
+    ${headerConfig.glowEffect ? "boxShadow: '0 0 20px rgba(147, 51, 234, 0.3)'," : headerConfig.headerStyle === 'edgy' ? "boxShadow: '0 2px 20px rgba(220, 38, 38, 0.2)'," : ''}
   },
   navBrand: {
     textDecoration: 'none',
   },
   brandText: {
     fontSize: '20px',
-    fontWeight: '400',
+    fontWeight: '${['playful', 'edgy', 'bold'].includes(headerConfig.headerStyle) ? '700' : '400'}',
     fontFamily: "${typography.heading}",
-    color: '${colors.primary}',
-    letterSpacing: '1px',
-    textTransform: 'none',
+    color: '${['playful', 'edgy', 'bold'].includes(headerConfig.headerStyle) ? '#ffffff' : colors.primary}',
+    letterSpacing: '${headerConfig.headerStyle === 'edgy' ? '2px' : '1px'}',
+    textTransform: '${headerConfig.headerStyle === 'edgy' ? 'uppercase' : 'none'}',
+    ${headerConfig.glowEffect ? "textShadow: '0 0 10px rgba(147, 51, 234, 0.5)'," : headerConfig.headerStyle === 'edgy' ? "textShadow: '0 0 10px rgba(220, 38, 38, 0.3)'," : ''}
   },
   navLinks: {
     display: 'flex',
     gap: '32px',
+  },
+  navActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
   },
   navAuth: {
     display: 'flex',
     alignItems: 'center',
   },
   navLink: {
-    color: '${colors.textMuted}',
+    color: '${['playful', 'edgy', 'bold'].includes(headerConfig.headerStyle) ? 'rgba(255,255,255,0.8)' : colors.textMuted}',
     textDecoration: 'none',
     fontSize: '14px',
-    fontWeight: '500',
-    letterSpacing: '1px',
+    fontWeight: '${headerConfig.headerStyle === 'edgy' ? '600' : '500'}',
+    letterSpacing: '${headerConfig.headerStyle === 'edgy' ? '2px' : '1px'}',
     textTransform: 'uppercase',
     transition: 'color 0.2s',
+  },
+  // Primary CTA button
+  primaryCta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 20px',
+    background: '${headerConfig.type === 'emergency' ? '#dc2626' : headerConfig.type === 'entertainment' ? 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)' : headerConfig.type === 'creative' ? 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)' : headerConfig.type === 'barbershop' ? '#1a1a2e' : '#22c55e'}',
+    color: '#ffffff',
+    textDecoration: 'none',
+    borderRadius: '${headerConfig.headerStyle === 'edgy' ? '4px' : '8px'}',
+    fontSize: '14px',
+    fontWeight: '600',
+    transition: 'all 0.2s',
+    ${headerConfig.glowEffect ? "boxShadow: '0 0 15px rgba(147, 51, 234, 0.4)'," : headerConfig.type === 'creative' ? "boxShadow: '0 0 15px rgba(220, 38, 38, 0.4)'," : ''}
+  },
+  // Secondary CTA button
+  secondaryCta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 20px',
+    background: 'transparent',
+    color: '${['playful', 'edgy', 'bold'].includes(headerConfig.headerStyle) ? '#ffffff' : colors.primary}',
+    border: '1px solid ${['playful', 'edgy', 'bold'].includes(headerConfig.headerStyle) ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)'}',
+    textDecoration: 'none',
+    borderRadius: '${headerConfig.headerStyle === 'edgy' ? '4px' : '8px'}',
+    fontSize: '14px',
+    fontWeight: '500',
+    transition: 'all 0.2s',
+  },
+  // Hours display (restaurant)
+  hoursDisplay: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: '${colors.textMuted}',
+    fontSize: '13px',
+    padding: '6px 12px',
+    background: 'rgba(0,0,0,0.05)',
+    borderRadius: '4px',
+  },
+  // Credentials badge (professional)
+  credentialsBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: '#059669',
+    fontSize: '12px',
+    fontWeight: '600',
+    padding: '4px 10px',
+    background: 'rgba(5, 150, 105, 0.1)',
+    borderRadius: '4px',
+  },
+  // Social icons (entertainment)
+  socialIcons: {
+    display: 'flex',
+    gap: '8px',
+  },
+  socialLink: {
+    color: '${['playful', 'edgy', 'bold'].includes(headerConfig.headerStyle) ? 'rgba(255,255,255,0.7)' : colors.textMuted}',
+    transition: 'color 0.2s',
+  },
+  // Search box (retail)
+  searchBox: {
+    position: 'relative',
+    marginRight: '24px',
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: '#9ca3af',
+  },
+  searchInput: {
+    padding: '10px 12px 10px 40px',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
+    width: '240px',
+    fontSize: '14px',
+    outline: 'none',
+  },
+  // Cart link (retail)
+  cartLink: {
+    position: 'relative',
+    color: '${colors.text}',
+    padding: '8px',
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: '0',
+    right: '0',
+    background: '#dc2626',
+    color: '#ffffff',
+    fontSize: '10px',
+    fontWeight: '600',
+    width: '16px',
+    height: '16px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Mobile actions container
+  mobileActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  // Mobile phone button (service businesses)
+  mobilePhoneBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '44px',
+    height: '44px',
+    background: '${headerConfig.type === 'emergency' ? '#dc2626' : '#22c55e'}',
+    color: '#ffffff',
+    borderRadius: '50%',
+    textDecoration: 'none',
   },
   hamburger: {
     background: 'none',
     border: 'none',
-    color: '${colors.text}',
+    color: '${['playful', 'edgy', 'bold'].includes(headerConfig.headerStyle) ? '#ffffff' : colors.text}',
     cursor: 'pointer',
     padding: '12px',
     display: 'flex',
@@ -2619,7 +5099,7 @@ const styles = {
   },
   mobileMenuOverlay: {
     position: 'fixed',
-    top: '60px',
+    top: topOffset + 'px',
     left: 0,
     right: 0,
     bottom: 0,
@@ -2628,7 +5108,7 @@ const styles = {
   },
   mobileMenu: {
     position: 'fixed',
-    top: '60px',
+    top: topOffset + 'px',
     left: 0,
     right: 0,
     background: '#ffffff',
@@ -2639,7 +5119,7 @@ const styles = {
     gap: '8px',
     zIndex: 999,
     boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-    maxHeight: 'calc(100vh - 60px)',
+    maxHeight: 'calc(100vh - ' + topOffset + 'px)',
     overflowY: 'auto',
   },
   mobileNavLink: {
@@ -2653,13 +5133,42 @@ const styles = {
     minHeight: '48px',
     lineHeight: '16px',
   },
+  mobileCtas: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    paddingTop: '16px',
+  },
+  mobilePrimaryCta: {
+    display: 'block',
+    padding: '16px',
+    background: '${headerConfig.type === 'emergency' ? '#dc2626' : headerConfig.type === 'entertainment' ? 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)' : '#22c55e'}',
+    color: '#ffffff',
+    textDecoration: 'none',
+    textAlign: 'center',
+    borderRadius: '8px',
+    fontWeight: '600',
+    fontSize: '16px',
+  },
+  mobileSecondaryCta: {
+    display: 'block',
+    padding: '16px',
+    background: 'transparent',
+    border: '1px solid #e5e7eb',
+    color: '${colors.text}',
+    textDecoration: 'none',
+    textAlign: 'center',
+    borderRadius: '8px',
+    fontWeight: '500',
+    fontSize: '16px',
+  },
   mobileAuthButtons: {
     paddingTop: '16px',
     borderTop: '1px solid rgba(0,0,0,0.1)',
   },${authStyles}
   main: {
     flex: 1,
-    paddingTop: '60px',
+    paddingTop: topOffset + 'px',
   },
   footer: {
     padding: '40px 48px',
@@ -2899,6 +5408,1020 @@ body { margin: 0; font-family: var(--font-body); color: var(--color-text); }
 }
 
 // ============================================
+// ORCHESTRATOR ENDPOINT
+// ============================================
+
+// Rate limiter for orchestrate endpoint (same as assemble)
+const orchestrateRateLimiter = require('express-rate-limit')({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10, // 10 requests per minute
+  message: { success: false, error: 'Too many requests. Please wait a moment before trying again.' }
+});
+
+/**
+ * POST /api/orchestrate
+ * Takes a single sentence and autonomously creates a complete website
+ *
+ * Request: { input: "Create a website for Mario's Pizza in Brooklyn" }
+ * Response: Same as /api/assemble (project URL, deployment status, etc.)
+ */
+app.post('/api/orchestrate', orchestrateRateLimiter, async (req, res) => {
+  const { input, autoDeploy = false } = req.body;
+  const startTime = Date.now();
+
+  // Validate input
+  if (!input || typeof input !== 'string' || input.trim().length < 3) {
+    return res.status(400).json({
+      success: false,
+      error: 'Please provide a description of the website you want to create (minimum 3 characters)'
+    });
+  }
+
+  const userInput = input.trim();
+  console.log('\n' + '='.repeat(60));
+  console.log('⚡ ORCHESTRATOR MODE');
+  console.log('='.repeat(60));
+  console.log(`📝 Input: "${userInput}"`);
+  console.log('');
+
+  try {
+    // Load orchestrator service
+    const { orchestrate, validatePayload } = require('./services/orchestrator.cjs');
+
+    // Run orchestration - AI infers all details
+    console.log('🤖 AI Analysis in progress...');
+    const orchestratorResult = await orchestrate(userInput);
+
+    if (!orchestratorResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: orchestratorResult.error || 'Orchestration failed'
+      });
+    }
+
+    const { payload, summary } = orchestratorResult;
+
+    // Helper for safe array joining
+    const safeJoin = (arr, separator = ', ') => {
+      if (!arr || !Array.isArray(arr)) return 'none';
+      return arr.length > 0 ? arr.join(separator) : 'none';
+    };
+
+    // ========================================
+    // HANDLE TOOL TYPE - Single page generation
+    // ========================================
+    if (orchestratorResult.type === 'tool') {
+      // Import specialized HTML generators and tool tester
+      const { generateSpecializedToolHTML } = require('./services/orchestrator.cjs');
+      const { testTool, logTestResults } = require('./services/tool-tester.cjs');
+
+      const toolKey = payload.toolKey || summary.toolKey;
+      const toolConfig = payload.toolConfig || {};
+
+      // Log TOOL-specific AI decisions
+      console.log('');
+      console.log('📊 AI DECISIONS (TOOL):');
+      console.log('─'.repeat(40));
+      console.log(`   🛠️ Tool Type: ${toolKey}`);
+      console.log(`   📦 Tool Category: ${payload.toolCategory || summary.toolCategory || 'general'}`);
+      console.log(`   📝 Tool Name: ${payload.name || summary.toolName || 'Unnamed Tool'}`);
+      console.log(`   ✨ Features: ${safeJoin(toolConfig.features)}`);
+      console.log(`   📋 Fields: ${safeJoin(toolConfig.fields?.map(f => f.label || f.name))}`);
+      console.log(`   🎨 Colors: Primary ${toolConfig.colors?.primary || payload.theme?.colors?.primary || 'default'}`);
+      console.log(`   📦 Modules needed: none (pure frontend)`);
+      console.log(`   🎯 Confidence: ${summary.confidence || 'high'}`);
+      console.log('─'.repeat(40));
+      console.log('');
+
+      const duration = Date.now() - startTime;
+
+      // Create tool project directory
+      const toolName = payload.name
+        .replace(/&/g, ' and ')
+        .replace(/[^a-zA-Z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .toLowerCase()
+        .substring(0, 50);
+
+      const projectPath = path.join(GENERATED_PROJECTS, toolName);
+
+      // Create project directory if it doesn't exist
+      if (!fs.existsSync(projectPath)) {
+        fs.mkdirSync(projectPath, { recursive: true });
+      }
+
+      // Generate specialized HTML using orchestrator's generators
+      const toolHtml = generateSpecializedToolHTML(toolKey, {
+        name: payload.name,
+        icon: toolConfig.icon,
+        description: toolConfig.description,
+        features: toolConfig.features,
+        fields: toolConfig.fields,
+        colors: toolConfig.colors || payload.theme?.colors
+      });
+
+      // ========================================
+      // RUN AUTOMATED TOOL TESTS
+      // ========================================
+      console.log('');
+      console.log('🧪 RUNNING TOOL VALIDATION TESTS');
+      console.log('─'.repeat(40));
+
+      const testResults = testTool(toolHtml, toolKey);
+      logTestResults(testResults);
+
+      console.log('─'.repeat(40));
+      console.log('');
+
+      // Save the HTML file
+      fs.writeFileSync(path.join(projectPath, 'index.html'), toolHtml);
+
+      // Generate tool-specific metadata
+      const toolMeta = {
+        generatedAt: new Date().toISOString(),
+        originalInput: userInput,
+        type: 'tool',
+        toolKey: toolKey,
+        toolCategory: payload.toolCategory || summary.toolCategory,
+        toolConfig: toolConfig,
+        theme: payload.theme,
+        processingTimeMs: duration
+      };
+
+      // Save tool metadata
+      fs.writeFileSync(
+        path.join(projectPath, 'tool-meta.json'),
+        JSON.stringify(toolMeta, null, 2)
+      );
+
+      console.log('');
+      console.log('✅ TOOL GENERATION COMPLETE');
+      console.log(`   ⏱️ Total time: ${(duration / 1000).toFixed(1)}s`);
+      console.log(`   📁 Path: ${projectPath}`);
+      console.log('='.repeat(60));
+
+      return res.json({
+        success: true,
+        type: 'tool',
+        project: {
+          name: toolName,
+          path: projectPath
+        },
+        tool: {
+          originalInput: userInput,
+          toolKey: toolKey,
+          name: payload.name,
+          category: payload.toolCategory || summary.toolCategory,
+          icon: toolConfig.icon,
+          description: toolConfig.description,
+          features: toolConfig.features,
+          fields: toolConfig.fields,
+          colors: toolConfig.colors || payload.theme?.colors
+        },
+        // Include the HTML for preview/download/copy
+        html: toolHtml,
+        // Include test results for UI display
+        testResults: {
+          passed: testResults.passed,
+          failed: testResults.failed,
+          warnings: testResults.warnings,
+          allPassed: testResults.allPassed,
+          details: testResults.details
+        },
+        duration: duration
+      });
+    }
+
+    // ========================================
+    // HANDLE BUSINESS TYPE - Multi-page assembly
+    // ========================================
+
+    // Log BUSINESS-specific AI decisions
+    console.log('');
+    console.log('📊 AI DECISIONS (BUSINESS):');
+    console.log('─'.repeat(40));
+    console.log(`   🏢 Business Name: ${summary.businessName || payload.name || 'Unknown'}`);
+    console.log(`   🏭 Industry: ${summary.industryName || 'Unknown'} (${payload.industry || 'unknown'})`);
+    console.log(`   📍 Location: ${summary.location || 'Not specified'}`);
+    console.log(`   📄 Pages (${summary.pages || 0}): ${safeJoin(payload.pages)}`);
+    console.log(`   🔧 Modules (${summary.modules || 0}): ${safeJoin(payload.modules)}`);
+    console.log(`   🎨 Colors: Primary ${payload.theme?.colors?.primary || 'default'}, Accent ${payload.theme?.colors?.accent || 'default'}`);
+    console.log(`   🎯 Confidence: ${summary.confidence || 'unknown'}`);
+    if (payload.metadata?.inferredDetails) {
+      console.log(`   💬 Tagline: "${payload.metadata.inferredDetails.tagline || 'N/A'}"`);
+      console.log(`   📢 CTA: "${payload.metadata.inferredDetails.callToAction || 'N/A'}"`);
+    }
+    console.log('─'.repeat(40));
+    console.log('');
+
+    // Validate the payload for business sites
+    const validation = validatePayload(payload);
+    if (!validation.valid) {
+      console.log('❌ Validation failed:', safeJoin(validation.errors));
+      return res.status(400).json({
+        success: false,
+        error: `Invalid configuration: ${safeJoin(validation.errors)}`
+      });
+    }
+
+    console.log('🏢 BUSINESS MODE - Starting multi-page assembly');
+
+    // Now execute the assembly by calling the same logic as /api/assemble
+    // We'll forward the orchestrated payload to the internal assembly logic
+    console.log('🚀 Starting assembly with orchestrated configuration...');
+
+    // Sanitize project name - same as /api/assemble
+    const sanitizedName = payload.name
+      .replace(/&/g, ' and ')
+      .replace(/[^a-zA-Z0-9\s-]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .substring(0, 100);
+
+    if (!sanitizedName || sanitizedName.length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Generated project name is invalid'
+      });
+    }
+
+    // Build command arguments
+    const args = ['--name', sanitizedName];
+
+    // Add industry
+    const sanitizedIndustry = payload.industry
+      .toLowerCase()
+      .replace(/[&]/g, 'and')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    args.push('--industry', sanitizedIndustry);
+
+    console.log(`   📦 Project: ${sanitizedName}`);
+    console.log(`   🏭 Industry: ${sanitizedIndustry}`);
+
+    const ASSEMBLY_TIMEOUT = 5 * 60 * 1000; // 5 minute timeout
+    let responded = false;
+
+    // Execute the assembly script
+    const childProcess = spawn(process.execPath, [ASSEMBLE_SCRIPT, ...args], {
+      cwd: path.dirname(ASSEMBLE_SCRIPT),
+      shell: false,
+      env: { ...process.env, MODULE_LIBRARY_PATH: MODULE_LIBRARY, OUTPUT_PATH: GENERATED_PROJECTS }
+    });
+
+    // Timeout handler
+    const timeoutId = setTimeout(() => {
+      if (!responded) {
+        responded = true;
+        childProcess.kill('SIGTERM');
+        console.error('❌ Assembly timeout');
+        res.status(504).json({
+          success: false,
+          error: 'Assembly timeout - process took too long',
+          orchestratorSummary: summary
+        });
+      }
+    }, ASSEMBLY_TIMEOUT);
+
+    let output = '';
+    let errorOutput = '';
+
+    childProcess.stdout.on('data', (data) => {
+      output += data.toString();
+      console.log(data.toString());
+    });
+
+    childProcess.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+      console.error(data.toString());
+    });
+
+    childProcess.on('error', (err) => {
+      clearTimeout(timeoutId);
+      if (!responded) {
+        responded = true;
+        console.error(`❌ Spawn error: ${err.message}`);
+        res.status(500).json({
+          success: false,
+          error: `Failed to start assembly: ${err.message}`,
+          orchestratorSummary: summary
+        });
+      }
+    });
+
+    childProcess.on('close', async (code) => {
+      clearTimeout(timeoutId);
+      if (responded) return;
+      responded = true;
+
+      const duration = Date.now() - startTime;
+
+      if (code === 0) {
+        const projectPath = path.join(GENERATED_PROJECTS, sanitizedName);
+
+        // Generate brain.json with orchestrator metadata
+        const industryConfig = INDUSTRIES[sanitizedIndustry] || INDUSTRIES['consulting'] || {};
+        const brainJsonContent = generateBrainJson(sanitizedName, sanitizedIndustry, industryConfig);
+        fs.writeFileSync(path.join(projectPath, 'brain.json'), brainJsonContent);
+        console.log('   🧠 brain.json generated');
+
+        // Save orchestrator metadata
+        const orchestratorMeta = {
+          generatedAt: new Date().toISOString(),
+          originalInput: userInput,
+          aiDecisions: summary,
+          payload: payload,
+          processingTimeMs: duration
+        };
+        fs.writeFileSync(
+          path.join(projectPath, 'orchestrator-meta.json'),
+          JSON.stringify(orchestratorMeta, null, 2)
+        );
+        console.log('   📋 orchestrator-meta.json saved');
+
+        // Copy business-admin module
+        const businessAdminSrc = path.join(MODULE_LIBRARY, 'frontend', 'business-admin');
+        const businessAdminDest = path.join(projectPath, 'admin');
+        if (fs.existsSync(businessAdminSrc)) {
+          copyDirectorySync(businessAdminSrc, businessAdminDest);
+          console.log('   🎛️ business-admin module copied');
+        }
+
+        // ========================================
+        // GENERATE FRONTEND PAGES (like Quick Start)
+        // ========================================
+        if (payload.pages && payload.pages.length > 0) {
+          console.log('');
+          console.log('🎨 GENERATING FRONTEND PAGES');
+          console.log('─'.repeat(40));
+
+          const apiKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+          const frontendSrcPath = path.join(projectPath, 'frontend', 'src');
+          const pagesDir = path.join(frontendSrcPath, 'pages');
+
+          // Create pages directory
+          if (!fs.existsSync(pagesDir)) {
+            fs.mkdirSync(pagesDir, { recursive: true });
+          }
+
+          // Build prompt config from orchestrator data
+          const promptConfig = {
+            businessName: summary.businessName,
+            industry: industryConfig,
+            colors: payload.theme?.colors || { primary: '#6366f1', accent: '#06b6d4' },
+            typography: payload.theme?.typography || { heading: "'Inter', sans-serif", body: "system-ui, sans-serif" }
+          };
+
+          // Build description object for page generation
+          const description = {
+            text: `${summary.businessName} - ${payload.metadata?.inferredDetails?.tagline || ''} ${payload.metadata?.inferredDetails?.description || ''}`,
+            pages: payload.pages,
+            businessName: summary.businessName,
+            tagline: payload.metadata?.inferredDetails?.tagline,
+            callToAction: payload.metadata?.inferredDetails?.callToAction,
+            industryKey: sanitizedIndustry,
+            location: summary.location
+          };
+
+          if (apiKey) {
+            try {
+              const { default: Anthropic } = await import('@anthropic-ai/sdk');
+              const client = new Anthropic({ apiKey });
+              const MODEL_NAME = 'claude-sonnet-4-20250514';
+
+              console.log(`   ⚡ Generating ${payload.pages.length} pages in parallel...`);
+
+              // Generate pages in parallel
+              const pagePromises = payload.pages.map(async (pageId) => {
+                const componentName = toComponentName(pageId);
+                try {
+                  console.log(`   🎨 Generating ${pageId} → ${componentName}Page.jsx...`);
+
+                  const otherPages = payload.pages.filter(p => p !== pageId).map(p => `/${p}`).join(', ');
+
+                  // Build orchestrator-specific page prompt
+                  const pagePrompt = buildOrchestratorPagePrompt(pageId, componentName, otherPages, description, promptConfig);
+
+                  const pageResponse = await client.messages.create({
+                    model: MODEL_NAME,
+                    max_tokens: 16000,
+                    messages: [{ role: 'user', content: pagePrompt }]
+                  });
+
+                  let pageCode = pageResponse.content[0].text;
+                  pageCode = pageCode.replace(/^```jsx?\n?/g, '').replace(/\n?```$/g, '').trim();
+
+                  // Validate generated code
+                  const validation = validateGeneratedCode(pageCode, componentName);
+                  if (!validation.isValid) {
+                    console.log(`   ⚠️ ${pageId} has issues: ${validation.errors.join(', ')}`);
+                    pageCode = validation.fixedCode;
+                  }
+
+                  if (!pageCode.includes('export default')) {
+                    console.log(`   ⚠️ ${pageId} incomplete, using fallback`);
+                    pageCode = buildFallbackPage(componentName, pageId, promptConfig);
+                  }
+
+                  const pagePath = path.join(pagesDir, `${componentName}Page.jsx`);
+                  fs.writeFileSync(pagePath, pageCode);
+                  console.log(`   ✅ ${componentName}Page.jsx`);
+                  return { pageId, componentName, success: true };
+
+                } catch (pageErr) {
+                  console.error(`   ⚠️ ${pageId} failed: ${pageErr.message}`);
+                  const fallbackCode = buildFallbackPage(componentName, pageId, promptConfig);
+                  fs.writeFileSync(path.join(pagesDir, `${componentName}Page.jsx`), fallbackCode);
+                  return { pageId, componentName, success: false, fallback: true };
+                }
+              });
+
+              const results = await Promise.all(pagePromises);
+              const successCount = results.filter(r => r.success).length;
+              console.log(`   ✅ ${successCount}/${payload.pages.length} pages generated`);
+
+              // Generate App.jsx with routes
+              const appJsx = buildAppJsx(sanitizedName, payload.pages, promptConfig, sanitizedIndustry);
+              fs.writeFileSync(path.join(frontendSrcPath, 'App.jsx'), appJsx);
+              console.log('   ✅ App.jsx updated with routes');
+
+              // Ensure theme.css exists
+              const themeCssPath = path.join(frontendSrcPath, 'theme.css');
+              if (!fs.existsSync(themeCssPath)) {
+                const fallbackTheme = buildFallbackThemeCss(promptConfig);
+                fs.writeFileSync(themeCssPath, fallbackTheme);
+                console.log('   🎨 Created theme.css');
+              }
+
+            } catch (pageGenErr) {
+              console.error('   ⚠️ Page generation error:', pageGenErr.message);
+              // Continue with assembly even if page generation fails
+            }
+          } else {
+            console.log('   ⚠️ No API key - skipping AI page generation');
+            // Generate basic fallback pages
+            for (const pageId of payload.pages) {
+              const componentName = toComponentName(pageId);
+              const fallbackCode = buildFallbackPage(componentName, pageId, promptConfig);
+              fs.writeFileSync(path.join(pagesDir, `${componentName}Page.jsx`), fallbackCode);
+            }
+            const appJsx = buildAppJsx(sanitizedName, payload.pages, promptConfig, sanitizedIndustry);
+            fs.writeFileSync(path.join(frontendSrcPath, 'App.jsx'), appJsx);
+            console.log('   ✅ Fallback pages and App.jsx created');
+          }
+
+          console.log('─'.repeat(40));
+        }
+
+        console.log('');
+        console.log('✅ ORCHESTRATION COMPLETE');
+        console.log(`   ⏱️ Total time: ${(duration / 1000).toFixed(1)}s`);
+        console.log('='.repeat(60));
+
+        res.json({
+          success: true,
+          project: {
+            name: sanitizedName,
+            path: projectPath
+          },
+          orchestrator: {
+            originalInput: userInput,
+            summary: summary,
+            decisions: {
+              businessName: summary.businessName,
+              industry: summary.industry,
+              industryName: summary.industryName,
+              location: summary.location,
+              pages: payload.pages,
+              modules: payload.modules,
+              colors: payload.theme?.colors,
+              tagline: payload.metadata?.inferredDetails?.tagline,
+              callToAction: payload.metadata?.inferredDetails?.callToAction,
+              confidence: summary.confidence
+            }
+          },
+          duration: duration
+        });
+      } else {
+        console.error(`❌ Assembly failed with code ${code}`);
+        res.status(500).json({
+          success: false,
+          error: 'Assembly failed',
+          details: errorOutput || output,
+          orchestratorSummary: summary
+        });
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Orchestrator error:', error.message);
+    captureException(error, { tags: { component: 'orchestrator' } });
+    res.status(500).json({
+      success: false,
+      error: `Orchestration failed: ${error.message}`
+    });
+  }
+});
+
+// ============================================
+// INTENT DETECTION ENDPOINT
+// ============================================
+
+/**
+ * POST /api/orchestrate/detect-intent
+ * Detect intent type from user input without starting full orchestration
+ * Used to determine if we should show choice screen
+ *
+ * Request: { input: "I'm starting a bakery" }
+ * Response: { type: 'ambiguous' | 'tool' | 'business' | 'recommendations', detectedIndustry, ... }
+ */
+app.post('/api/orchestrate/detect-intent', async (req, res) => {
+  const { input } = req.body;
+
+  if (!input || input.trim().length < 2) {
+    return res.status(400).json({
+      success: false,
+      error: 'Input is required'
+    });
+  }
+
+  try {
+    const { detectIntentType, VALID_INDUSTRIES, INDUSTRY_KEYWORDS } = require('./services/orchestrator.cjs');
+
+    const intent = detectIntentType(input);
+
+    // Get a display-friendly industry name
+    let industryDisplay = intent.detectedIndustry;
+    if (industryDisplay) {
+      // Convert kebab-case to Title Case
+      industryDisplay = industryDisplay
+        .split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    }
+
+    // Get industry icon
+    const industryIcons = {
+      'bakery': '🥐',
+      'restaurant': '🍽️',
+      'pizza': '🍕',
+      'cafe': '☕',
+      'bar': '🍺',
+      'fitness': '💪',
+      'yoga': '🧘',
+      'spa-salon': '💆',
+      'dental': '🦷',
+      'healthcare': '🏥',
+      'law-firm': '⚖️',
+      'accounting': '📊',
+      'real-estate': '🏠',
+      'consulting': '💼',
+      'photography': '📸',
+      'freelance': '💻',
+      'agency': '🎨',
+      'startup': '🚀',
+      'saas': '☁️',
+      'ecommerce': '🛒',
+      'plumbing': '🔧',
+      'hvac': '❄️',
+      'electrical': '⚡',
+      'landscaping': '🌳',
+      'cleaning': '🧹',
+      'auto': '🚗',
+      'pet': '🐾',
+      'education': '📚',
+      'nonprofit': '❤️',
+      'church': '⛪',
+      'wedding': '💒'
+    };
+
+    const icon = industryIcons[intent.detectedIndustry] || '🏢';
+
+    console.log(`[detect-intent] "${input}" → ${intent.type} (industry: ${intent.detectedIndustry || 'none'})`);
+
+    return res.json({
+      success: true,
+      type: intent.type,
+      toolKey: intent.toolKey,
+      confidence: intent.confidence,
+      detectedIndustry: intent.detectedIndustry,
+      industryDisplay,
+      industryIcon: icon,
+      originalInput: input
+    });
+
+  } catch (error) {
+    console.error('❌ Intent detection error:', error);
+    return res.status(500).json({
+      success: false,
+      error: `Detection failed: ${error.message}`
+    });
+  }
+});
+
+// ============================================
+// TOOL RECOMMENDATIONS ENDPOINT
+// ============================================
+
+/**
+ * POST /api/orchestrate/recommend
+ * Get tool recommendations for an industry/profession
+ *
+ * Request: { input: "I'm a plumber" } or { industry: "plumbing" }
+ * Response: { recommendations: [...], industry: "plumbing" }
+ */
+app.post('/api/orchestrate/recommend', orchestrateRateLimiter, async (req, res) => {
+  const { input, industry } = req.body;
+  const startTime = Date.now();
+
+  // Validate input
+  const userInput = input?.trim() || industry?.trim();
+  if (!userInput || userInput.length < 2) {
+    return res.status(400).json({
+      success: false,
+      error: 'Please provide an industry or description (minimum 2 characters)'
+    });
+  }
+
+  console.log('\n' + '='.repeat(60));
+  console.log('💡 TOOL RECOMMENDATIONS');
+  console.log('='.repeat(60));
+  console.log(`📝 Input: "${userInput}"`);
+
+  try {
+    const { recommendTools, detectRecommendationIntent } = require('./services/orchestrator.cjs');
+
+    // Detect intent if full input provided
+    let industryToUse = industry;
+    if (input && !industry) {
+      const intent = detectRecommendationIntent(input);
+      if (intent.industry) {
+        industryToUse = intent.industry;
+        console.log(`🎯 Detected industry: ${industryToUse}`);
+      } else {
+        industryToUse = input; // Use raw input for AI inference
+      }
+    }
+
+    // Get recommendations
+    const result = await recommendTools(industryToUse || userInput);
+    const duration = Date.now() - startTime;
+
+    console.log(`✅ Got ${result.recommendations.length} recommendations in ${duration}ms`);
+    console.log(`   Source: ${result.source}`);
+    console.log('='.repeat(60));
+
+    return res.json({
+      success: true,
+      ...result,
+      duration
+    });
+  } catch (error) {
+    console.error('❌ Recommendation error:', error);
+    return res.status(500).json({
+      success: false,
+      error: `Failed to get recommendations: ${error.message}`
+    });
+  }
+});
+
+/**
+ * POST /api/orchestrate/build-tool
+ * Build a specific tool by toolType (used from recommendations)
+ *
+ * Request: { toolType: "tip-calculator", name: "My Tip Calculator" }
+ * Response: Same as /api/orchestrate for tool type
+ */
+app.post('/api/orchestrate/build-tool', orchestrateRateLimiter, async (req, res) => {
+  const { toolType, name, customization } = req.body;
+  const startTime = Date.now();
+
+  if (!toolType) {
+    return res.status(400).json({
+      success: false,
+      error: 'Tool type is required'
+    });
+  }
+
+  console.log('\n' + '='.repeat(60));
+  console.log('🔧 BUILD SPECIFIC TOOL');
+  console.log('='.repeat(60));
+  console.log(`📝 Tool Type: ${toolType}`);
+  console.log(`📛 Name: ${name || 'default'}`);
+
+  try {
+    const { TOOL_TEMPLATES, generateSpecializedToolHTML } = require('./services/orchestrator.cjs');
+
+    // Get tool template
+    const template = TOOL_TEMPLATES[toolType];
+    if (!template) {
+      // Fall back to generic prompt-based generation
+      console.log('   Using AI generation for unknown tool type');
+      const { orchestrate } = require('./services/orchestrator.cjs');
+      const result = await orchestrate(`Create a ${toolType.replace(/-/g, ' ')}`);
+
+      if (!result.success || result.type !== 'tool') {
+        return res.status(400).json({
+          success: false,
+          error: `Could not generate tool: ${toolType}`
+        });
+      }
+
+      // Generate HTML
+      const toolHtml = generateSpecializedToolHTML(result.payload.toolKey, {
+        name: name || result.payload.name,
+        ...result.payload.toolConfig
+      });
+
+      const duration = Date.now() - startTime;
+
+      return res.json({
+        success: true,
+        type: 'tool',
+        tool: {
+          toolKey: result.payload.toolKey,
+          name: name || result.payload.name,
+          ...result.payload.toolConfig
+        },
+        html: toolHtml,
+        duration
+      });
+    }
+
+    // Generate from known template
+    const toolConfig = {
+      name: name || template.name,
+      icon: template.icon,
+      description: template.description,
+      features: template.features,
+      fields: template.fields,
+      colors: customization?.colors || template.colors
+    };
+
+    const toolHtml = generateSpecializedToolHTML(toolType, toolConfig);
+    const duration = Date.now() - startTime;
+
+    // Create project directory
+    const toolName = (name || template.name)
+      .replace(/&/g, ' and ')
+      .replace(/[^a-zA-Z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .toLowerCase()
+      .substring(0, 50);
+
+    const projectPath = path.join(GENERATED_PROJECTS, toolName);
+    if (!fs.existsSync(projectPath)) {
+      fs.mkdirSync(projectPath, { recursive: true });
+    }
+    fs.writeFileSync(path.join(projectPath, 'index.html'), toolHtml);
+
+    console.log('✅ Tool built successfully');
+    console.log(`   ⏱️ Time: ${duration}ms`);
+    console.log('='.repeat(60));
+
+    return res.json({
+      success: true,
+      type: 'tool',
+      project: {
+        name: toolName,
+        path: projectPath
+      },
+      tool: {
+        toolKey: toolType,
+        ...toolConfig
+      },
+      html: toolHtml,
+      duration
+    });
+  } catch (error) {
+    console.error('❌ Build tool error:', error);
+    return res.status(500).json({
+      success: false,
+      error: `Failed to build tool: ${error.message}`
+    });
+  }
+});
+
+/**
+ * POST /api/orchestrate/build-suite
+ * Build a Tool Suite with multiple tools
+ *
+ * Request: {
+ *   tools: [{ toolType: "calculator", name: "Calculator" }, ...],
+ *   branding: { businessName: "My Business", colors: {...}, style: "modern" },
+ *   options: { organization: "grid", toolOrder: [...], categoryGroups: {...} }
+ * }
+ * Response: { success, files, zipPath, suiteConfig }
+ */
+app.post('/api/orchestrate/build-suite', orchestrateRateLimiter, async (req, res) => {
+  const { tools, branding, options } = req.body;
+  const startTime = Date.now();
+
+  console.log('');
+  console.log('='.repeat(60));
+  console.log('🧰 TOOL SUITE BUILDER');
+  console.log('='.repeat(60));
+
+  try {
+    // Validate input
+    if (!tools || !Array.isArray(tools) || tools.length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least 2 tools are required for a suite'
+      });
+    }
+
+    if (tools.length > 20) {
+      return res.status(400).json({
+        success: false,
+        error: 'Maximum 20 tools per suite'
+      });
+    }
+
+    const { generateToolSuite, getSuiteOrganization, TOOL_TEMPLATES } = require('./services/orchestrator.cjs');
+
+    // Process tools - get full config for each
+    const processedTools = tools.map(tool => {
+      const template = TOOL_TEMPLATES[tool.toolType] || TOOL_TEMPLATES['generic'] || {
+        name: tool.name || 'Tool',
+        icon: '🔧',
+        description: 'A useful tool'
+      };
+
+      return {
+        key: tool.toolType,
+        toolKey: tool.toolType,
+        name: tool.name || template.name,
+        icon: tool.icon || template.icon,
+        description: tool.description || template.description,
+        category: tool.category || template.category || 'General',
+        features: tool.features || template.features || [],
+        fields: tool.fields || template.fields || []
+      };
+    });
+
+    // Determine organization if not specified
+    const organization = options?.organization
+      ? { type: options.organization, description: `${options.organization} layout` }
+      : getSuiteOrganization(processedTools.length);
+
+    console.log(`   🏢 Business: ${branding?.businessName || 'Tool Suite'}`);
+    console.log(`   🛠️ Tools: ${processedTools.length}`);
+    console.log(`   📊 Organization: ${organization.type}`);
+    console.log(`   🎨 Style: ${branding?.style || 'modern'}`);
+    console.log('─'.repeat(40));
+
+    // Log each tool
+    processedTools.forEach((tool, i) => {
+      console.log(`   ${i + 1}. ${tool.icon} ${tool.name} (${tool.key})`);
+    });
+    console.log('─'.repeat(40));
+
+    // Generate the suite
+    const suiteResult = generateToolSuite(processedTools, branding, {
+      organization,
+      toolOrder: options?.toolOrder,
+      categoryGroups: options?.categoryGroups
+    });
+
+    // Create suite directory
+    const suiteName = (branding?.businessName || 'tool-suite')
+      .replace(/&/g, ' and ')
+      .replace(/[^a-zA-Z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .toLowerCase()
+      .substring(0, 50);
+
+    const suiteDir = path.join(GENERATED_PROJECTS, `${suiteName}-suite`);
+
+    // Clean and create directory
+    if (fs.existsSync(suiteDir)) {
+      fs.rmSync(suiteDir, { recursive: true, force: true });
+    }
+    fs.mkdirSync(suiteDir, { recursive: true });
+
+    // Create tools subdirectory if needed
+    if (organization.type !== 'tabbed') {
+      fs.mkdirSync(path.join(suiteDir, 'tools'), { recursive: true });
+    }
+
+    // Write all files
+    const fileList = [];
+    for (const [filename, content] of Object.entries(suiteResult.files)) {
+      const filePath = path.join(suiteDir, filename);
+      // Ensure parent directory exists
+      const parentDir = path.dirname(filePath);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+      fs.writeFileSync(filePath, content);
+      fileList.push(filename);
+      console.log(`   ✅ Created: ${filename}`);
+    }
+
+    // Generate ZIP file
+    let zipPath = null;
+    try {
+      const archiver = require('archiver');
+      zipPath = path.join(suiteDir, `${suiteName}-suite.zip`);
+
+      const output = fs.createWriteStream(zipPath);
+      const archive = archiver('zip', { zlib: { level: 9 } });
+
+      await new Promise((resolve, reject) => {
+        output.on('close', resolve);
+        archive.on('error', reject);
+        archive.pipe(output);
+
+        // Add all files except the zip itself
+        for (const [filename, content] of Object.entries(suiteResult.files)) {
+          archive.append(content, { name: filename });
+        }
+
+        archive.finalize();
+      });
+
+      console.log(`   📦 ZIP created: ${path.basename(zipPath)}`);
+    } catch (zipError) {
+      console.log('   ⚠️ ZIP creation skipped (archiver not available)');
+    }
+
+    const duration = Date.now() - startTime;
+
+    console.log('');
+    console.log('✅ TOOL SUITE COMPLETE');
+    console.log(`   ⏱️ Time: ${duration}ms`);
+    console.log(`   📁 Path: ${suiteDir}`);
+    console.log(`   📄 Files: ${fileList.length}`);
+    console.log('='.repeat(60));
+
+    // Read index.html for preview
+    const indexHtml = suiteResult.files['index.html'];
+
+    return res.json({
+      success: true,
+      type: 'suite',
+      project: {
+        name: `${suiteName}-suite`,
+        path: suiteDir
+      },
+      suite: {
+        businessName: branding?.businessName || 'Tool Suite',
+        organization: organization.type,
+        toolCount: processedTools.length,
+        tools: processedTools.map(t => ({
+          key: t.key,
+          name: t.name,
+          icon: t.icon,
+          category: t.category
+        }))
+      },
+      files: fileList,
+      html: indexHtml,
+      zipPath: zipPath,
+      zipFilename: zipPath ? `${suiteName}-suite.zip` : null,
+      duration
+    });
+
+  } catch (error) {
+    console.error('❌ Build suite error:', error);
+    return res.status(500).json({
+      success: false,
+      error: `Failed to build suite: ${error.message}`
+    });
+  }
+});
+
+/**
+ * GET /api/orchestrate/download-suite/:projectName
+ * Download the suite ZIP file
+ */
+app.get('/api/orchestrate/download-suite/:projectName', (req, res) => {
+  const { projectName } = req.params;
+
+  if (!projectName) {
+    return res.status(400).json({ success: false, error: 'Project name required' });
+  }
+
+  // Security: sanitize project name
+  const safeName = projectName.replace(/[^a-zA-Z0-9-]/g, '');
+  const suiteDir = path.join(GENERATED_PROJECTS, safeName);
+  const zipPath = path.join(suiteDir, `${safeName}.zip`);
+
+  if (!fs.existsSync(zipPath)) {
+    // Try to find any zip in the directory
+    const files = fs.readdirSync(suiteDir);
+    const zipFile = files.find(f => f.endsWith('.zip'));
+    if (zipFile) {
+      return res.download(path.join(suiteDir, zipFile), zipFile);
+    }
+    return res.status(404).json({ success: false, error: 'ZIP file not found' });
+  }
+
+  res.download(zipPath, `${safeName}.zip`);
+});
+
+// ============================================
 // UTILITY ENDPOINTS
 // ============================================
 
@@ -3024,10 +6547,26 @@ app.post('/api/analyze-site', async (req, res) => {
 }`
         }]
       });
-      
+
+      // Track API cost
+      if (response.usage && db && db.trackApiUsage) {
+        const inputTokens = response.usage.input_tokens || 0;
+        const outputTokens = response.usage.output_tokens || 0;
+        const cost = (inputTokens / 1000000) * 3.0 + (outputTokens / 1000000) * 15.0;
+        console.log(`   💰 API Cost: $${cost.toFixed(4)} (${inputTokens} in / ${outputTokens} out)`);
+        try {
+          await db.trackApiUsage({
+            endpoint: 'claude-api', operation: 'analyze-site-url',
+            tokensUsed: inputTokens + outputTokens, inputTokens, outputTokens, cost, responseStatus: 200
+          });
+        } catch (trackingErr) {
+          console.warn('   ⚠️ API usage tracking failed:', trackingErr.message);
+        }
+      }
+
       const jsonMatch = response.content[0].text.match(/\{[\s\S]*\}/);
       const analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
-      
+
       return res.json({
         success: true,
         analysis: { url: url, ...analysis, mock: false, method: 'url-only' }
@@ -3051,14 +6590,30 @@ app.post('/api/analyze-site', async (req, res) => {
         ]
       }]
     });
-    
+
+    // Track API cost
+    if (response.usage && db && db.trackApiUsage) {
+      const inputTokens = response.usage.input_tokens || 0;
+      const outputTokens = response.usage.output_tokens || 0;
+      const cost = (inputTokens / 1000000) * 3.0 + (outputTokens / 1000000) * 15.0;
+      console.log(`   💰 API Cost: $${cost.toFixed(4)} (${inputTokens} in / ${outputTokens} out)`);
+      try {
+        await db.trackApiUsage({
+          endpoint: 'claude-api', operation: 'analyze-site-vision',
+          tokensUsed: inputTokens + outputTokens, inputTokens, outputTokens, cost, responseStatus: 200
+        });
+      } catch (trackingErr) {
+          console.warn('   ⚠️ API usage tracking failed:', trackingErr.message);
+        }
+    }
+
     const responseText = response.content[0].text;
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    
+
     if (!jsonMatch) {
       throw new Error('Could not parse AI response');
     }
-    
+
     const analysis = JSON.parse(jsonMatch[0]);
     console.log(`   ✅ Analysis complete for ${url}`);
     
@@ -3128,7 +6683,23 @@ Return ONLY valid JSON with this structure:
 }`
       }]
     });
-    
+
+    // Track API cost
+    if (response.usage && db && db.trackApiUsage) {
+      const inputTokens = response.usage.input_tokens || 0;
+      const outputTokens = response.usage.output_tokens || 0;
+      const cost = (inputTokens / 1000000) * 3.0 + (outputTokens / 1000000) * 15.0;
+      console.log(`   💰 API Cost: $${cost.toFixed(4)} (${inputTokens} in / ${outputTokens} out)`);
+      try {
+        await db.trackApiUsage({
+          endpoint: 'claude-api', operation: 'generate-theme',
+          tokensUsed: inputTokens + outputTokens, inputTokens, outputTokens, cost, responseStatus: 200
+        });
+      } catch (trackingErr) {
+          console.warn('   ⚠️ API usage tracking failed:', trackingErr.message);
+        }
+    }
+
     const responseText = response.content[0].text;
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     
@@ -3452,7 +7023,7 @@ Return JSON with this structure:
   "businessName": "extracted business name",
   "industry": "detected industry",
   "phone": "phone number",
-  "email": "email address", 
+  "email": "email address",
   "address": "physical address if found",
   "description": "2-3 sentence description",
   "keyServices": ["service1", "service2"],
@@ -3463,7 +7034,23 @@ Return JSON with this structure:
 }`
       }]
     });
-    
+
+    // Track API cost
+    if (response.usage && db && db.trackApiUsage) {
+      const inputTokens = response.usage.input_tokens || 0;
+      const outputTokens = response.usage.output_tokens || 0;
+      const cost = (inputTokens / 1000000) * 3.0 + (outputTokens / 1000000) * 15.0;
+      console.log(`   💰 API Cost: $${cost.toFixed(4)} (${inputTokens} in / ${outputTokens} out)`);
+      try {
+        await db.trackApiUsage({
+          endpoint: 'claude-api', operation: 'analyze-existing-site',
+          tokensUsed: inputTokens + outputTokens, inputTokens, outputTokens, cost, responseStatus: 200
+        });
+      } catch (trackingErr) {
+          console.warn('   ⚠️ API usage tracking failed:', trackingErr.message);
+        }
+    }
+
     const responseText = response.content[0].text;
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     
@@ -3515,45 +7102,72 @@ async function autoDeployProject(projectPath, projectName, adminEmail) {
 }
 
 // Deploy a generated project
+// Deploy endpoint with Server-Sent Events for real-time progress
 app.post('/api/deploy', async (req, res) => {
-  const { projectPath, projectName, adminEmail } = req.body;
+  const { projectPath, projectName, adminEmail, stream } = req.body;
 
   if (!deployReady) {
-    return res.status(500).json({ 
-      success: false, 
-      error: 'Deploy service not configured. Check .env for missing credentials.' 
+    return res.status(500).json({
+      success: false,
+      error: 'Deploy service not configured. Check .env for missing credentials.'
     });
   }
 
   if (!projectPath || !projectName) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'projectPath and projectName required' 
+    return res.status(400).json({
+      success: false,
+      error: 'projectPath and projectName required'
     });
   }
 
   // Check project exists
   if (!fs.existsSync(projectPath)) {
-    return res.status(400).json({ 
-      success: false, 
-      error: `Project not found: ${projectPath}` 
+    return res.status(400).json({
+      success: false,
+      error: `Project not found: ${projectPath}`
     });
   }
 
   console.log(`\n🚀 Deploy request received for: ${projectName}`);
 
-  try {
-    const result = await deployService.deployProject(projectPath, projectName, {
-      adminEmail: adminEmail || 'admin@be1st.io'
-    });
+  // If streaming requested, use SSE
+  if (stream) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
 
-    res.json(result);
-  } catch (error) {
-    console.error('Deploy error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    try {
+      const result = await deployService.deployProject(projectPath, projectName, {
+        adminEmail: adminEmail || 'admin@be1st.io',
+        onProgress: (progress) => {
+          res.write(`data: ${JSON.stringify(progress)}\n\n`);
+        }
+      });
+
+      // Send final result
+      res.write(`data: ${JSON.stringify({ type: 'complete', result })}\n\n`);
+      res.end();
+    } catch (error) {
+      console.error('Deploy error:', error);
+      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+      res.end();
+    }
+  } else {
+    // Non-streaming mode (original behavior)
+    try {
+      const result = await deployService.deployProject(projectPath, projectName, {
+        adminEmail: adminEmail || 'admin@be1st.io'
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error('Deploy error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
   }
 });
 
@@ -3566,6 +7180,166 @@ app.get('/api/deploy/status', (req, res) => {
       github: !!process.env.GITHUB_TOKEN,
       cloudflare: !!process.env.CLOUDFLARE_TOKEN && !!process.env.CLOUDFLARE_ZONE_ID
     }
+  });
+});
+
+// Poll Railway deployment status
+app.get('/api/deploy/railway-status/:projectId', async (req, res) => {
+  const { projectId } = req.params;
+
+  if (!projectId) {
+    return res.status(400).json({ success: false, error: 'Project ID required' });
+  }
+
+  if (!process.env.RAILWAY_TOKEN) {
+    return res.status(500).json({ success: false, error: 'Railway token not configured' });
+  }
+
+  try {
+    // GraphQL query to get all services and their deployment status
+    const query = `
+      query($projectId: String!) {
+        project(id: $projectId) {
+          id
+          name
+          services {
+            edges {
+              node {
+                id
+                name
+                deployments(first: 1) {
+                  edges {
+                    node {
+                      id
+                      status
+                      createdAt
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const response = await fetch('https://backboard.railway.app/graphql/v2', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.RAILWAY_TOKEN}`
+      },
+      body: JSON.stringify({ query, variables: { projectId } })
+    });
+
+    const data = await response.json();
+
+    if (data.errors) {
+      throw new Error(data.errors[0]?.message || 'Railway API error');
+    }
+
+    const project = data.data?.project;
+    if (!project) {
+      return res.status(404).json({ success: false, error: 'Project not found' });
+    }
+
+    // Map services to their status
+    const services = {};
+    let allDeployed = true;
+    let hasFailure = false;
+
+    for (const edge of (project.services?.edges || [])) {
+      const service = edge.node;
+      const latestDeployment = service.deployments?.edges?.[0]?.node;
+      const status = latestDeployment?.status || 'PENDING';
+
+      // Normalize service names (postgres, backend, frontend, admin)
+      let serviceName = service.name.toLowerCase();
+      if (serviceName.includes('postgres') || serviceName.includes('database')) {
+        serviceName = 'postgres';
+      } else if (serviceName.includes('backend') || serviceName.includes('api')) {
+        serviceName = 'backend';
+      } else if (serviceName.includes('admin')) {
+        serviceName = 'admin';
+      } else if (serviceName.includes('frontend')) {
+        serviceName = 'frontend';
+      }
+
+      services[serviceName] = {
+        name: service.name,
+        status: status,
+        isDeployed: status === 'SUCCESS',
+        isFailed: status === 'FAILED' || status === 'CRASHED',
+        isBuilding: status === 'BUILDING' || status === 'DEPLOYING' || status === 'INITIALIZING'
+      };
+
+      if (status !== 'SUCCESS') {
+        allDeployed = false;
+      }
+      if (status === 'FAILED' || status === 'CRASHED') {
+        hasFailure = true;
+      }
+    }
+
+    res.json({
+      success: true,
+      projectId: project.id,
+      projectName: project.name,
+      services,
+      allDeployed,
+      hasFailure,
+      serviceCount: Object.keys(services).length
+    });
+
+  } catch (error) {
+    console.error('Railway status check failed:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to check Railway status'
+    });
+  }
+});
+
+// ============================================
+// SENTRY TEST ENDPOINT (for verification)
+// ============================================
+app.get('/api/sentry-test', (req, res) => {
+  throw new Error('Sentry test error - this is intentional!');
+});
+
+app.post('/api/sentry-test', (req, res) => {
+  const { message } = req.body;
+  captureException(new Error(message || 'Manual test error'), {
+    tags: { type: 'manual-test' },
+    extra: { timestamp: new Date().toISOString() }
+  });
+  res.json({ success: true, message: 'Error sent to Sentry' });
+});
+
+// ============================================
+// SENTRY ERROR HANDLER - Must be AFTER all routes
+// ============================================
+app.use(sentryErrorHandler());
+
+// Global error handler (after Sentry captures the error)
+app.use((err, req, res, next) => {
+  console.error('🔴 Server error:', err.message);
+
+  // Capture to Sentry if not already captured
+  captureException(err, {
+    tags: { handler: 'global-error-handler' },
+    extra: {
+      url: req.url,
+      method: req.method,
+      body: req.body
+    }
+  });
+
+  res.status(err.status || 500).json({
+    success: false,
+    error: process.env.NODE_ENV === 'production'
+      ? 'Internal server error'
+      : err.message
   });
 });
 
