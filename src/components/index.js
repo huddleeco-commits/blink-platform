@@ -16,3 +16,11 @@ export {
   whatYouGetStyles,
   industryBannerStyles
 } from './wizard';
+export {
+  LayoutThumbnail,
+  LayoutStyleSelector,
+  LivePreviewRenderer,
+  layoutSelectorStyles,
+  layoutThumbnailStyles,
+  livePreviewStyles
+} from './layout';
