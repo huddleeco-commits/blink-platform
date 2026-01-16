@@ -7,6 +7,10 @@
 export { ChoosePathStep } from './ChoosePathStep.jsx';
 export { QuickStep } from './QuickStep.jsx';
 export { OrchestratorStep } from './OrchestratorStep.jsx';
+export { RebuildStep } from './RebuildStep.jsx';
+export { UploadAssetsStep } from './UploadAssetsStep.jsx';
+export { ReferenceStep } from './ReferenceStep.jsx';
+export { CustomizeStep, customizeStyles, p1Styles, layoutStyles } from './CustomizeStep.jsx';
 
 // Error screens
 export { ErrorStep } from './ErrorStep.jsx';
