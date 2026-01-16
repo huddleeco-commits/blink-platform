@@ -19,41 +19,8 @@ import {
   STYLE_OPTIONS,
   ADMIN_LEVELS
 } from './constants';
-
-// ============================================
-// RESPONSIVE BREAKPOINTS & HOOKS
-// ============================================
-
-// Hook to detect screen size
-function useWindowSize() {
-  const [windowSize, setWindowSize] = useState({
-    width: typeof window !== 'undefined' ? window.innerWidth : 1200,
-    height: typeof window !== 'undefined' ? window.innerHeight : 800
-  });
-
-  useEffect(() => {
-    function handleResize() {
-      setWindowSize({
-        width: window.innerWidth,
-        height: window.innerHeight
-      });
-    }
-
-    window.addEventListener('resize', handleResize);
-    handleResize();
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  return windowSize;
-}
-
-// Get responsive layout mode based on width
-function getLayoutMode(width) {
-  if (width < BREAKPOINTS.mobile) return 'mobile';
-  if (width < BREAKPOINTS.tablet) return 'tablet';
-  if (width < BREAKPOINTS.desktop) return 'desktop';
-  return 'largeDesktop';
-}
+import { useWindowSize } from './hooks';
+import { getLayoutMode } from './utils';
 
 // ============================================
 // PASSWORD GATE (Main Entry)
