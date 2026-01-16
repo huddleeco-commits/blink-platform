@@ -7,20 +7,53 @@
 
 import React, { useState, useEffect } from 'react';
 import { INDUSTRY_LAYOUTS, getLayoutConfig, buildLayoutPromptContext } from '../config/industry-layouts.js';
-
-const API_BASE = 'http://localhost:3001';
+import {
+  API_BASE,
+  BREAKPOINTS,
+  TAGLINES,
+  LAYOUT_OPTIONS,
+  getLayoutsForIndustry,
+  INDUSTRY_PAGES,
+  PAGE_LABELS,
+  COLOR_PRESETS,
+  STYLE_OPTIONS,
+  ADMIN_LEVELS
+} from './constants';
 
 // ============================================
-// ROTATING TAGLINES
+// RESPONSIVE BREAKPOINTS & HOOKS
 // ============================================
-const TAGLINES = [
-  "From thought to business. Just blink.",
-  "Level the playing field. Just blink.",
-  "Ideas deserve a chance. Just blink.",
-  "Zero to launch. Just blink.",
-  "Dream it. Build it. Just blink.",
-  "Everyone can be first. Just blink.",
-];
+
+// Hook to detect screen size
+function useWindowSize() {
+  const [windowSize, setWindowSize] = useState({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1200,
+    height: typeof window !== 'undefined' ? window.innerHeight : 800
+  });
+
+  useEffect(() => {
+    function handleResize() {
+      setWindowSize({
+        width: window.innerWidth,
+        height: window.innerHeight
+      });
+    }
+
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return windowSize;
+}
+
+// Get responsive layout mode based on width
+function getLayoutMode(width) {
+  if (width < BREAKPOINTS.mobile) return 'mobile';
+  if (width < BREAKPOINTS.tablet) return 'tablet';
+  if (width < BREAKPOINTS.desktop) return 'desktop';
+  return 'largeDesktop';
+}
 
 // ============================================
 // PASSWORD GATE (Main Entry)
@@ -187,14 +220,51 @@ export default function App() {
   const [taglineIndex, setTaglineIndex] = useState(0);
   
   // Flow state
-  const [step, setStep] = useState('choose-path'); // choose-path, rebuild, quick, reference, upload-assets, customize, generating, complete, deploying, deploy-complete, deploy-error, error
+  const [step, setStep] = useState('choose-path'); // choose-path, rebuild, quick, reference, orchestrator, upload-assets, customize, generating, complete, deploying, deploy-complete, deploy-error, error
   
   // Deploy state
   const [deployStatus, setDeployStatus] = useState(null);
   const [deployResult, setDeployResult] = useState(null);
   const [deployError, setDeployError] = useState(null);
-  const [path, setPath] = useState(null); // 'rebuild', 'quick', 'reference'
-  
+  const [path, setPath] = useState(null); // 'rebuild', 'quick', 'reference', 'orchestrator'
+
+  // Orchestrator state
+  const [orchestratorResult, setOrchestratorResult] = useState(null);
+  const [selectedTool, setSelectedTool] = useState(null); // For pre-selected tool type
+  const [isToolMode, setIsToolMode] = useState(false); // Tool vs business mode
+
+  // Tool recommendations state
+  const [recommendations, setRecommendations] = useState([]);
+  const [recommendationIndustry, setRecommendationIndustry] = useState(null);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+
+  // Tool suite state
+  const [selectedToolsForSuite, setSelectedToolsForSuite] = useState([]);
+  const [suiteResult, setSuiteResult] = useState(null);
+
+  // Choice screen state (for ambiguous inputs)
+  const [choiceData, setChoiceData] = useState(null);
+  const [pendingOrchestratorInput, setPendingOrchestratorInput] = useState(null);
+
+  // Shared context state (persists across site/tools flows)
+  const [sharedContext, setSharedContext] = useState({
+    businessName: '',
+    brandColor: '#3b82f6',
+    location: '',
+    industry: null,
+    industryDisplay: null,
+    style: 'modern', // modern, minimal, warm, professional
+    logo: null,
+    tagline: ''
+  });
+
+  // Site customization state
+  const [siteCustomization, setSiteCustomization] = useState(null);
+
+  // Tool customization state (for single tool flow)
+  const [toolCustomization, setToolCustomization] = useState(null);
+  const [selectedToolForCustomization, setSelectedToolForCustomization] = useState(null);
+
   // Data collected from any path
   const [projectData, setProjectData] = useState({
     // From any path
@@ -208,6 +278,14 @@ export default function App() {
 
     // NEW: Business basics
     location: '',
+
+    // NEW: High-impact questions
+    teamSize: null, // 'solo', 'small', 'medium', 'large'
+    priceRange: null, // 'budget', 'mid', 'premium', 'luxury'
+    yearsEstablished: null, // 'new', 'growing', 'established', 'veteran'
+
+    // NEW: Inferred from business name
+    inferredDetails: null, // { location, style, industry }
 
     // NEW: Target audience (multi-select)
     targetAudience: [],
@@ -234,6 +312,9 @@ export default function App() {
 
     // Pages
     selectedPages: ['home', 'about', 'contact'],
+
+    // Video hero background (auto-enabled for supported industries)
+    enableVideoHero: null, // null = auto (based on industry), true/false = user override
 
     // References (for reference path)
     referenceSites: [],
@@ -334,16 +415,40 @@ export default function App() {
   };
 
   // Handle path selection
-  const selectPath = (selectedPath) => {
+  const selectPath = (selectedPath, toolId = null) => {
     if ((selectedPath === 'rebuild' || selectedPath === 'reference') && !isDevUnlocked) {
       setPendingDevPath(selectedPath);
       setShowDevModal(true);
       return;
     }
     setPath(selectedPath);
-    if (selectedPath === 'rebuild') setStep('rebuild');
-    else if (selectedPath === 'quick') setStep('quick');
-    else if (selectedPath === 'reference') setStep('reference');
+
+    // Handle tool selections
+    if (selectedPath === 'tool' && toolId) {
+      // Direct tool generation with pre-selected tool type
+      setSelectedTool(toolId);
+      setIsToolMode(true);
+      setStep('orchestrator');
+    } else if (selectedPath === 'tool-custom') {
+      // Custom tool mode - opens orchestrator with tool placeholders
+      setSelectedTool(null);
+      setIsToolMode(true);
+      setStep('orchestrator');
+    } else if (selectedPath === 'orchestrator') {
+      // Business orchestrator mode
+      setSelectedTool(null);
+      setIsToolMode(false);
+      setStep('orchestrator');
+    } else if (selectedPath === 'rebuild') {
+      setIsToolMode(false);
+      setStep('rebuild');
+    } else if (selectedPath === 'quick') {
+      setIsToolMode(false);
+      setStep('quick');
+    } else if (selectedPath === 'reference') {
+      setIsToolMode(false);
+      setStep('reference');
+    }
   };
   
   const handleDevUnlock = () => {
@@ -419,6 +524,14 @@ export default function App() {
       const toneLabel = projectData.tone < 33 ? 'professional and formal' :
                         projectData.tone > 66 ? 'friendly and casual' : 'balanced';
 
+      // Compute effective video hero setting
+      const videoSupportedIndustries = ['tattoo', 'barbershop', 'barber', 'restaurant', 'pizza', 'pizzeria', 'fitness', 'gym', 'spa', 'salon', 'wellness'];
+      const industryLower = (projectData.industryKey || '').toLowerCase();
+      const industrySupportsVideo = videoSupportedIndustries.some(v => industryLower.includes(v));
+      const effectiveEnableVideoHero = projectData.enableVideoHero !== null
+        ? projectData.enableVideoHero
+        : industrySupportsVideo;
+
       const payload = {
         name: projectData.businessName.replace(/[^a-zA-Z0-9]/g, '-'),
         industry: projectData.industryKey,
@@ -442,9 +555,16 @@ export default function App() {
           targetAudience: projectData.targetAudience,
           primaryCTA: projectData.primaryCTA,
           tone: toneLabel,
+          // High-impact questions for better generation
+          teamSize: projectData.teamSize,
+          priceRange: projectData.priceRange,
+          yearsEstablished: projectData.yearsEstablished,
+          inferredDetails: projectData.inferredDetails,
           // Layout style selection
           layoutStyleId: projectData.layoutStyleId,
-          layoutStylePreview: projectData.layoutStylePreview
+          layoutStylePreview: projectData.layoutStylePreview,
+          // Video hero background
+          enableVideoHero: effectiveEnableVideoHero
         }
       };
 
@@ -502,6 +622,56 @@ export default function App() {
   const [deployStartTime, setDeployStartTime] = useState(null);
 
   // Deploy the generated project
+  // Railway services status state
+  const [railwayServices, setRailwayServices] = useState(null);
+
+  // Poll Railway for actual service deployment status
+  const pollRailwayStatus = async (projectId, deployResultData) => {
+    const maxAttempts = 60; // 5 minutes max (60 * 5 seconds)
+    let attempts = 0;
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/deploy/railway-status/${projectId}`);
+        const data = await response.json();
+
+        if (data.success) {
+          setRailwayServices(data.services);
+
+          if (data.allDeployed) {
+            // All services are online! Show success
+            setDeployResult(deployResultData);
+            setStep('deploy-complete');
+            return;
+          }
+
+          if (data.hasFailure) {
+            // A service failed
+            throw new Error('One or more services failed to deploy. Check Railway dashboard.');
+          }
+        }
+
+        // Keep polling if not complete
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 5000); // Poll every 5 seconds
+        } else {
+          // Timeout - show as complete anyway with warning
+          console.warn('Railway status polling timed out');
+          setDeployResult(deployResultData);
+          setStep('deploy-complete');
+        }
+      } catch (err) {
+        console.error('Railway status poll error:', err);
+        // On error, still show complete (deployment was triggered successfully)
+        setDeployResult(deployResultData);
+        setStep('deploy-complete');
+      }
+    };
+
+    poll();
+  };
+
   const handleDeploy = async () => {
     if (!result?.path || !result?.name) {
       setDeployError({ title: 'No Project', message: 'No project to deploy. Please generate a project first.' });
@@ -510,61 +680,86 @@ export default function App() {
     }
 
     setStep('deploying');
-    setDeployStatus('Starting deployment...');
+    setDeployStatus({ status: 'Starting deployment...', icon: '🚀', progress: 0 });
     setDeployError(null);
     setDeployStartTime(Date.now());
+    setRailwayServices(null); // Reset services status
 
     // Create abort controller for cancellation
     const controller = new AbortController();
     setDeployAbortController(controller);
 
     try {
-      // Status updates for user feedback
-      const statusUpdates = [
-        { status: 'Creating GitHub repository...', icon: '📦' },
-        { status: 'Pushing code to GitHub...', icon: '📤' },
-        { status: 'Creating Railway project...', icon: '🚂' },
-        { status: 'Provisioning PostgreSQL database...', icon: '🗄️' },
-        { status: 'Deploying backend service...', icon: '⚙️' },
-        { status: 'Deploying frontend service...', icon: '🌐' },
-        { status: 'Configuring custom domains...', icon: '🔗' },
-        { status: 'Setting up DNS records...', icon: '📡' },
-        { status: 'Finalizing deployment...', icon: '✨' }
-      ];
-
-      let statusIndex = 0;
-      const statusInterval = setInterval(() => {
-        if (statusIndex < statusUpdates.length) {
-          setDeployStatus(statusUpdates[statusIndex]);
-          statusIndex++;
-        }
-      }, 3000);
-
+      // Use streaming endpoint for real-time progress
       const response = await fetch(`${API_BASE}/api/deploy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectPath: result.path,
           projectName: result.name || projectData.businessName.replace(/[^a-zA-Z0-9]/g, '-'),
-          adminEmail: 'admin@be1st.io'
+          adminEmail: 'admin@be1st.io',
+          stream: true
         }),
         signal: controller.signal
       });
-
-      clearInterval(statusInterval);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `Server error: ${response.status}`);
       }
 
-      const data = await response.json();
+      // Handle SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      if (data.success) {
-        setDeployResult(data);
-        setStep('deploy-complete');
-      } else {
-        throw new Error(data.error || 'Deployment failed');
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.type === 'complete') {
+                // Initial deployment triggered - now poll for actual Railway status
+                if (data.result?.success && data.result?.railwayProjectId) {
+                  setDeployStatus({ status: 'Waiting for services to come online...', icon: '⏳', progress: 95 });
+                  // Initialize service status display
+                  setRailwayServices({
+                    postgres: { status: 'INITIALIZING', isBuilding: true },
+                    backend: { status: 'INITIALIZING', isBuilding: true },
+                    frontend: { status: 'INITIALIZING', isBuilding: true },
+                    admin: { status: 'INITIALIZING', isBuilding: true }
+                  });
+                  // Start polling Railway for actual service status
+                  pollRailwayStatus(data.result.railwayProjectId, data.result);
+                } else if (data.result?.success) {
+                  // No railwayProjectId - just show complete
+                  setDeployResult(data.result);
+                  setStep('deploy-complete');
+                } else {
+                  throw new Error(data.result?.error || 'Deployment failed');
+                }
+              } else if (data.type === 'error') {
+                throw new Error(data.error);
+              } else {
+                // Progress update
+                setDeployStatus(data);
+              }
+            } catch (parseErr) {
+              if (parseErr.message && !parseErr.message.includes('parse')) {
+                throw parseErr; // Re-throw actual errors
+              }
+              console.warn('Failed to parse SSE data:', parseErr);
+            }
+          }
+        }
       }
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -609,6 +804,7 @@ export default function App() {
       layoutKey: null,
       effects: [],
       selectedPages: ['home', 'about', 'contact'],
+      enableVideoHero: null, // Reset to auto (industry-based default)
       referenceSites: [],
       existingSite: null,
       uploadedAssets: { logo: null, photos: [], menu: null },
@@ -710,6 +906,223 @@ export default function App() {
           />
         )}
         
+        {step === 'orchestrator' && (
+          <OrchestratorStep
+            isToolMode={isToolMode}
+            preselectedTool={selectedTool}
+            pendingInput={pendingOrchestratorInput}
+            onPendingInputUsed={() => setPendingOrchestratorInput(null)}
+            onComplete={(result) => {
+              setOrchestratorResult(result);
+              // Extract project object to match what CompleteStep expects (path, name)
+              setResult(result.project);
+              updateProject({ businessName: result.orchestrator?.decisions?.businessName || result.tool?.template || result.project?.name });
+              setStep('complete');
+            }}
+            onBack={() => {
+              setSelectedTool(null);
+              setIsToolMode(false);
+              setStep('choose-path');
+            }}
+            onAmbiguousInput={(intentData) => {
+              // Show choice screen when input is ambiguous
+              setChoiceData(intentData);
+              setStep('choice');
+            }}
+            onToolRecommendations={async (industry) => {
+              // Go directly to tool recommendations
+              setRecommendationsLoading(true);
+              setStep('recommendations');
+              try {
+                const response = await fetch(`${API_BASE}/api/orchestrate/recommend`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ industry })
+                });
+                const data = await response.json();
+                if (data.success) {
+                  setRecommendations(data.recommendations || []);
+                  setRecommendationIndustry(data.industry);
+                }
+              } catch (err) {
+                console.error('Failed to get recommendations:', err);
+                setStep('orchestrator');
+              } finally {
+                setRecommendationsLoading(false);
+              }
+            }}
+            onSuggestTools={async (industryInput) => {
+              setRecommendationsLoading(true);
+              setStep('recommendations');
+              try {
+                const response = await fetch(`${API_BASE}/api/orchestrate/recommend`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ input: industryInput })
+                });
+                const data = await response.json();
+                if (data.success) {
+                  setRecommendations(data.recommendations || []);
+                  setRecommendationIndustry(data.industry);
+                }
+              } catch (err) {
+                console.error('Failed to get recommendations:', err);
+                setStep('orchestrator');
+              } finally {
+                setRecommendationsLoading(false);
+              }
+            }}
+          />
+        )}
+
+        {step === 'choice' && choiceData && (
+          <ChoiceScreen
+            detectedIndustry={choiceData.detectedIndustry}
+            industryDisplay={choiceData.industryDisplay}
+            industryIcon={choiceData.industryIcon}
+            originalInput={choiceData.originalInput}
+            onChooseSite={() => {
+              // Update shared context with detected industry
+              setSharedContext(prev => ({
+                ...prev,
+                industry: choiceData.detectedIndustry,
+                industryDisplay: choiceData.industryDisplay
+              }));
+              // Store choice data for the customize screen
+              setSiteCustomization({
+                industry: choiceData.detectedIndustry,
+                industryDisplay: choiceData.industryDisplay,
+                industryIcon: choiceData.industryIcon
+              });
+              setChoiceData(null);
+              setStep('site-customize');
+            }}
+            onChooseTools={async () => {
+              // Update shared context with detected industry
+              setSharedContext(prev => ({
+                ...prev,
+                industry: choiceData.detectedIndustry,
+                industryDisplay: choiceData.industryDisplay
+              }));
+              // Go to tool recommendations for this industry
+              setRecommendationsLoading(true);
+              setStep('recommendations');
+              try {
+                const response = await fetch(`${API_BASE}/api/orchestrate/recommend`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ industry: choiceData.detectedIndustry })
+                });
+                const data = await response.json();
+                if (data.success) {
+                  setRecommendations(data.recommendations || []);
+                  setRecommendationIndustry(data.industry);
+                }
+              } catch (err) {
+                console.error('Failed to get recommendations:', err);
+                setStep('orchestrator');
+              } finally {
+                setRecommendationsLoading(false);
+                setChoiceData(null);
+              }
+            }}
+            onBack={() => {
+              setChoiceData(null);
+              setStep('choose-path');
+            }}
+          />
+        )}
+
+        {step === 'site-customize' && siteCustomization && (
+          <SiteCustomizationScreen
+            industry={siteCustomization.industry}
+            industryDisplay={siteCustomization.industryDisplay}
+            industryIcon={siteCustomization.industryIcon}
+            sharedContext={sharedContext}
+            onUpdateContext={setSharedContext}
+            onGenerate={async (config) => {
+              // Update shared context with customization
+              setSharedContext(prev => ({
+                ...prev,
+                businessName: config.businessName,
+                brandColor: config.brandColor,
+                location: config.location,
+                style: config.style,
+                logo: config.logo,
+                tagline: config.tagline
+              }));
+              // Update projectData for generation
+              updateProject({
+                businessName: config.businessName,
+                tagline: config.tagline,
+                location: config.location,
+                industry: { name: config.industryDisplay, key: config.industry },
+                industryKey: config.industry,
+                selectedPages: config.selectedPages,
+                colors: {
+                  ...projectData.colors,
+                  primary: config.brandColor
+                }
+              });
+              // Build input for orchestrator
+              const inputDescription = `Build a ${config.industryDisplay} website for ${config.businessName}${config.location ? ` in ${config.location}` : ''}. ${config.tagline ? `Tagline: "${config.tagline}". ` : ''}Style: ${config.style}. Pages: ${config.selectedPages.join(', ')}. Admin level: ${config.adminLevel}.`;
+              setPendingOrchestratorInput(inputDescription);
+              setSiteCustomization(null);
+              setStep('orchestrator');
+            }}
+            onBack={() => {
+              setSiteCustomization(null);
+              setStep('choice');
+              // Restore choice data
+              setChoiceData({
+                detectedIndustry: siteCustomization.industry,
+                industryDisplay: siteCustomization.industryDisplay,
+                industryIcon: siteCustomization.industryIcon,
+                originalInput: ''
+              });
+            }}
+          />
+        )}
+
+        {step === 'tool-customize' && selectedToolForCustomization && (
+          <ToolCustomizationScreen
+            tool={selectedToolForCustomization.toolType}
+            toolName={selectedToolForCustomization.name}
+            toolIcon={selectedToolForCustomization.icon}
+            sharedContext={sharedContext}
+            onUpdateContext={setSharedContext}
+            onGenerate={async (config) => {
+              // Update shared context
+              setSharedContext(prev => ({
+                ...prev,
+                businessName: config.businessName,
+                brandColor: config.brandColor,
+                style: config.style,
+                logo: config.logo
+              }));
+              // Build the tool with customization
+              setSelectedTool(selectedToolForCustomization.toolType);
+              setIsToolMode(true);
+              // Build input for orchestrator
+              const inputDescription = `Build a ${selectedToolForCustomization.name}${config.businessName ? ` for ${config.businessName}` : ''}. Style: ${config.style}. Primary color: ${config.brandColor}.`;
+              setPendingOrchestratorInput(inputDescription);
+              setSelectedToolForCustomization(null);
+              setStep('orchestrator');
+            }}
+            onBack={() => {
+              setSelectedToolForCustomization(null);
+              setStep('recommendations');
+            }}
+            onSkip={() => {
+              // Skip customization and build directly
+              setSelectedTool(selectedToolForCustomization.toolType);
+              setIsToolMode(true);
+              setSelectedToolForCustomization(null);
+              setStep('orchestrator');
+            }}
+          />
+        )}
+
         {step === 'generating' && (
           <GeneratingStep
             steps={generationSteps}
@@ -721,16 +1134,137 @@ export default function App() {
         )}
         
         {step === 'complete' && (
-          <CompleteStep 
-            result={result} 
-            projectData={projectData} 
-            onReset={handleReset} 
-            blinkCount={finalBlinkCount}
-            onDeploy={handleDeploy}
-            deployReady={true}
-          />
+          orchestratorResult?.type === 'tool' ? (
+            <ToolCompleteScreen
+              toolResult={orchestratorResult}
+              onReset={handleReset}
+              onBuildAnother={() => {
+                setOrchestratorResult(null);
+                setSelectedTool(null);
+                setIsToolMode(true);
+                setStep('orchestrator');
+              }}
+              industry={sharedContext.industryDisplay || recommendationIndustry}
+              onBuildSite={() => {
+                // Go to site customization with current context
+                setOrchestratorResult(null);
+                setSelectedTool(null);
+                setIsToolMode(false);
+                setSiteCustomization({
+                  industry: sharedContext.industry || recommendationIndustry,
+                  industryDisplay: sharedContext.industryDisplay || recommendationIndustry,
+                  industryIcon: '🌐'
+                });
+                setStep('site-customize');
+              }}
+            />
+          ) : (
+            <CompleteStep
+              result={result}
+              projectData={projectData}
+              onReset={handleReset}
+              blinkCount={finalBlinkCount}
+              onDeploy={handleDeploy}
+              deployReady={true}
+              industry={sharedContext.industryDisplay || projectData.industry?.name}
+              onAddTools={async () => {
+                // Go to tool recommendations for same industry
+                const industryKey = sharedContext.industry || projectData.industryKey;
+                if (industryKey) {
+                  setRecommendationsLoading(true);
+                  setStep('recommendations');
+                  try {
+                    const response = await fetch(`${API_BASE}/api/orchestrate/recommend`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ industry: industryKey })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                      setRecommendations(data.recommendations || []);
+                      setRecommendationIndustry(data.industry);
+                    }
+                  } catch (err) {
+                    console.error('Failed to get recommendations:', err);
+                  } finally {
+                    setRecommendationsLoading(false);
+                  }
+                }
+              }}
+            />
+          )
         )}
         
+        {step === 'recommendations' && (
+          <RecommendedToolsScreen
+            recommendations={recommendations}
+            industry={recommendationIndustry}
+            loading={recommendationsLoading}
+            sharedContext={sharedContext}
+            onSelectTool={(toolType, toolName) => {
+              // Go to tool customization screen
+              const tool = recommendations.find(r => r.toolType === toolType);
+              setSelectedToolForCustomization({
+                toolType,
+                name: toolName || tool?.name || toolType,
+                icon: tool?.icon || '🔧'
+              });
+              setStep('tool-customize');
+            }}
+            onSelectMultiple={async (toolTypes) => {
+              // Go to suite builder with selected tools
+              setSelectedToolsForSuite(toolTypes);
+              setStep('suite-builder');
+            }}
+            onBack={() => {
+              setRecommendations([]);
+              setRecommendationIndustry(null);
+              setStep('choose-path');
+            }}
+            onBuildSite={() => {
+              // Go to site customization with current context
+              setSiteCustomization({
+                industry: sharedContext.industry || recommendationIndustry,
+                industryDisplay: sharedContext.industryDisplay || recommendationIndustry,
+                industryIcon: '🌐'
+              });
+              setStep('site-customize');
+            }}
+          />
+        )}
+
+        {step === 'suite-builder' && (
+          <ToolSuiteBuilderScreen
+            selectedTools={selectedToolsForSuite}
+            recommendations={recommendations}
+            industry={recommendationIndustry}
+            onBuild={(result) => {
+              setSuiteResult(result);
+              setStep('suite-complete');
+            }}
+            onBack={() => {
+              setStep('recommendations');
+            }}
+          />
+        )}
+
+        {step === 'suite-complete' && (
+          <SuiteCompleteScreen
+            suiteResult={suiteResult}
+            onReset={() => {
+              setSuiteResult(null);
+              setSelectedToolsForSuite([]);
+              setRecommendations([]);
+              setRecommendationIndustry(null);
+              setStep('choose-path');
+            }}
+            onBuildAnother={() => {
+              setSuiteResult(null);
+              setStep('recommendations');
+            }}
+          />
+        )}
+
         {step === 'error' && (
           <ErrorStep error={error} onRetry={handleGenerate} onReset={handleReset} />
         )}
@@ -741,6 +1275,7 @@ export default function App() {
             projectName={projectData.businessName}
             startTime={deployStartTime}
             onCancel={handleCancelDeploy}
+            railwayServices={railwayServices}
           />
         )}
         
@@ -769,52 +1304,628 @@ export default function App() {
 // STEP 1: CHOOSE YOUR PATH
 // ============================================
 function ChoosePathStep({ onSelect, isDevUnlocked }) {
+  // Tool cards data
+  const popularTools = [
+    { id: 'invoice-generator', icon: '📄', name: 'Invoice Generator', desc: 'Create professional invoices' },
+    { id: 'qr-generator', icon: '📱', name: 'QR Code Generator', desc: 'Generate QR codes instantly' },
+    { id: 'calculator', icon: '🧮', name: 'Calculator', desc: 'Build custom calculators' },
+    { id: 'countdown', icon: '⏱️', name: 'Countdown Timer', desc: 'Event countdowns & timers' },
+  ];
+
   return (
     <div style={styles.stepContainer}>
-      <h1 style={styles.heroTitle}>How do you want to build?</h1>
-      <p style={styles.heroSubtitle}>Pick your path - they all lead to something beautiful</p>
-      
-      <div style={styles.pathGrid}>
-        {/* Rebuild Path - Dev Locked */}
-        <button style={{...styles.pathCard, ...(!isDevUnlocked ? styles.pathCardLocked : {})}} onClick={() => onSelect('rebuild')}>
-          {!isDevUnlocked && <div style={styles.lockedBadge}>🔒 DEV</div>}
-          <div style={styles.pathIcon}>🔄</div>
-          <h2 style={styles.pathTitle}>REBUILD</h2>
-          <p style={styles.pathDesc}>I have a website already</p>
-          <p style={styles.pathDetails}>
-            Paste your URL and we'll extract your content, colors, and create a modern upgrade.
-          </p>
-          <div style={styles.pathArrow}>→</div>
-        </button>
+      <h1 style={styles.heroTitle}>What do you want to create?</h1>
+      <p style={styles.heroSubtitle}>Build a complete website or a quick utility tool</p>
 
-        {/* Quick Path - Featured & Open */}
-        <button style={{...styles.pathCard, ...styles.pathCardFeatured}} onClick={() => onSelect('quick')}>
-          <div style={styles.featuredBadge}>FASTEST</div>
-          <div style={styles.pathIcon}>⚡</div>
-          <h2 style={styles.pathTitle}>QUICK START</h2>
-          <p style={styles.pathDesc}>Tell me what you're building</p>
-          <p style={styles.pathDetails}>
-            Just describe your business. AI picks the perfect template and you customize.
-          </p>
-          <div style={styles.pathArrow}>→</div>
-        </button>
+      {/* Section 1: Build a Business */}
+      <div style={styles.sectionContainer}>
+        <h2 style={styles.sectionTitle}>
+          <span style={styles.sectionIcon}>🏢</span> Build a Business Website
+        </h2>
+        <p style={styles.sectionSubtitle}>Multi-page websites with full functionality</p>
 
-        {/* Reference Path - Dev Locked */}
-        <button style={{...styles.pathCard, ...(!isDevUnlocked ? styles.pathCardLocked : {})}} onClick={() => onSelect('reference')}>
-          {!isDevUnlocked && <div style={styles.lockedBadge}>🔒 DEV</div>}
-          <div style={styles.pathIcon}>🎨</div>
-          <h2 style={styles.pathTitle}>INSPIRED</h2>
-          <p style={styles.pathDesc}>Show me sites I like</p>
-          <p style={styles.pathDetails}>
-            Add websites you love. AI extracts the best parts and builds something unique.
-          </p>
-          <div style={styles.pathArrow}>→</div>
-        </button>
+        <div style={styles.pathGrid}>
+          {/* Rebuild Path - Dev Locked */}
+          <button style={{...styles.pathCard, ...(!isDevUnlocked ? styles.pathCardLocked : {})}} onClick={() => onSelect('rebuild')}>
+            {!isDevUnlocked && <div style={styles.lockedBadge}>🔒 DEV</div>}
+            <div style={styles.pathIcon}>🔄</div>
+            <h2 style={styles.pathTitle}>REBUILD</h2>
+            <p style={styles.pathDesc}>I have a website already</p>
+            <p style={styles.pathDetails}>
+              Paste your URL and we'll extract your content, colors, and create a modern upgrade.
+            </p>
+            <div style={styles.pathArrow}>→</div>
+          </button>
+
+          {/* Quick Path - Featured & Open */}
+          <button style={{...styles.pathCard, ...styles.pathCardFeatured}} onClick={() => onSelect('quick')}>
+            <div style={styles.featuredBadge}>FASTEST</div>
+            <div style={styles.pathIcon}>⚡</div>
+            <h2 style={styles.pathTitle}>QUICK START</h2>
+            <p style={styles.pathDesc}>Tell me what you're building</p>
+            <p style={styles.pathDetails}>
+              Just describe your business. AI picks the perfect template and you customize.
+            </p>
+            <div style={styles.pathArrow}>→</div>
+          </button>
+
+          {/* Reference Path - Dev Locked */}
+          <button style={{...styles.pathCard, ...(!isDevUnlocked ? styles.pathCardLocked : {})}} onClick={() => onSelect('reference')}>
+            {!isDevUnlocked && <div style={styles.lockedBadge}>🔒 DEV</div>}
+            <div style={styles.pathIcon}>🎨</div>
+            <h2 style={styles.pathTitle}>INSPIRED</h2>
+            <p style={styles.pathDesc}>Show me sites I like</p>
+            <p style={styles.pathDetails}>
+              Add websites you love. AI extracts the best parts and builds something unique.
+            </p>
+            <div style={styles.pathArrow}>→</div>
+          </button>
+
+          {/* Orchestrator Path */}
+          <button style={{...styles.pathCard, ...styles.pathCardOrchestrator}} onClick={() => onSelect('orchestrator')}>
+            <div style={styles.newBadge}>AI</div>
+            <div style={styles.pathIcon}>🧠</div>
+            <h2 style={styles.pathTitle}>ORCHESTRATOR</h2>
+            <p style={styles.pathDesc}>One sentence. Done.</p>
+            <p style={styles.pathDetails}>
+              Just describe your business in a single sentence. AI handles everything.
+            </p>
+            <div style={styles.pathArrow}>→</div>
+          </button>
+        </div>
       </div>
-      
+
+      {/* Section 2: Build a Tool */}
+      <div style={styles.sectionContainer}>
+        <h2 style={styles.sectionTitle}>
+          <span style={styles.sectionIcon}>🛠️</span> Build a Tool
+        </h2>
+        <p style={styles.sectionSubtitle}>Single-page utilities and micro-tools</p>
+
+        <div style={styles.toolGrid}>
+          {/* Popular Tool Cards */}
+          {popularTools.map(tool => (
+            <button
+              key={tool.id}
+              style={styles.toolCard}
+              onClick={() => onSelect('tool', tool.id)}
+            >
+              <div style={styles.toolIcon}>{tool.icon}</div>
+              <h3 style={styles.toolName}>{tool.name}</h3>
+              <p style={styles.toolDesc}>{tool.desc}</p>
+            </button>
+          ))}
+
+          {/* Custom Tool Card */}
+          <button
+            style={{...styles.toolCard, ...styles.toolCardCustom}}
+            onClick={() => onSelect('tool-custom')}
+          >
+            <div style={styles.toolIcon}>✨</div>
+            <h3 style={styles.toolName}>Custom Tool</h3>
+            <p style={styles.toolDesc}>Describe any tool you need</p>
+            <div style={styles.customBadge}>AI-POWERED</div>
+          </button>
+        </div>
+      </div>
+
       <p style={styles.bottomHint}>
-        💡 All paths take under 2 minutes and create a complete, working website.
+        💡 All paths take under 2 minutes. Tools are single-page, websites are multi-page.
       </p>
+    </div>
+  );
+}
+
+// ============================================
+// ORCHESTRATOR MODE: One Sentence, Done
+// ============================================
+function OrchestratorStep({ onComplete, onBack, isToolMode = false, preselectedTool = null, onSuggestTools, onAmbiguousInput, onToolRecommendations, skipIntentDetection = false, pendingInput = null, onPendingInputUsed }) {
+  const [input, setInput] = useState(pendingInput || '');
+  const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const [aiDecisions, setAiDecisions] = useState(null);
+  const [error, setError] = useState(null);
+  const [autoStarted, setAutoStarted] = useState(false);
+  const [showSuggestInput, setShowSuggestInput] = useState(false);
+  const [suggestInput, setSuggestInput] = useState('');
+  const [detectingIntent, setDetectingIntent] = useState(false);
+  const [pendingTriggered, setPendingTriggered] = useState(false);
+
+  // Auto-trigger if there's a pending input from choice screen
+  useEffect(() => {
+    if (pendingInput && !pendingTriggered && !generating) {
+      setPendingTriggered(true);
+      if (onPendingInputUsed) onPendingInputUsed();
+      // Auto-trigger with skip intent detection since user already chose
+      setTimeout(() => {
+        handleBlinkWithInput(pendingInput, true); // Pass true to skip intent
+      }, 300);
+    }
+  }, [pendingInput, pendingTriggered, generating]);
+
+  // Tool display names mapping
+  const toolDisplayNames = {
+    'invoice-generator': 'Invoice Generator',
+    'qr-generator': 'QR Code Generator',
+    'calculator': 'Calculator',
+    'countdown': 'Countdown Timer',
+    'tip-calculator': 'Tip Calculator',
+    'bmi-calculator': 'BMI Calculator',
+    'unit-converter': 'Unit Converter',
+    'password-generator': 'Password Generator',
+  };
+
+  // Business placeholders
+  const businessPlaceholders = [
+    "Mario's Pizza in Brooklyn - authentic Italian since 1985",
+    "Dr. Sarah Chen's Family Dental Practice in Austin",
+    "Zen Flow Yoga Studio - modern wellness in downtown Seattle",
+    "Thompson & Associates Law Firm specializing in business law",
+    "Jake's Auto Repair - honest service in small town Ohio",
+    "Sunrise Coffee Roasters - artisan coffee in Portland",
+    "Elite CrossFit Gym - transform your fitness journey",
+    "The Rustic Table Restaurant - farm to table dining"
+  ];
+
+  // Tool placeholders
+  const toolPlaceholders = [
+    "A tip calculator with bill splitting",
+    "Pomodoro timer with customizable intervals",
+    "BMI calculator with health recommendations",
+    "Unit converter for cooking measurements",
+    "Password generator with strength indicator",
+    "Expense tracker with categories",
+    "Color palette generator for designers",
+    "Countdown timer for events"
+  ];
+
+  const placeholders = isToolMode ? toolPlaceholders : businessPlaceholders;
+
+  const [placeholder] = useState(() =>
+    placeholders[Math.floor(Math.random() * placeholders.length)]
+  );
+
+  // Auto-generate for preselected tools
+  useEffect(() => {
+    if (preselectedTool && !autoStarted) {
+      setAutoStarted(true);
+      const toolName = toolDisplayNames[preselectedTool] || preselectedTool;
+      setInput(`Create a ${toolName.toLowerCase()}`);
+      // Auto-trigger generation after a brief delay
+      setTimeout(() => {
+        handleBlinkWithInput(`Create a ${toolName.toLowerCase()}`);
+      }, 500);
+    }
+  }, [preselectedTool, autoStarted]);
+
+  const handleBlinkWithInput = async (customInput, forceSkipIntent = false) => {
+    const inputToUse = customInput || input.trim();
+    if (!inputToUse) {
+      setError(isToolMode ? 'Please describe the tool you want to create' : 'Please describe your business');
+      return;
+    }
+
+    // First, detect intent (unless we're skipping it or in explicit tool mode)
+    if (!skipIntentDetection && !forceSkipIntent && !isToolMode && !preselectedTool) {
+      setDetectingIntent(true);
+      setError(null);
+
+      try {
+        const intentResponse = await fetch(`${API_BASE}/api/orchestrate/detect-intent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input: inputToUse })
+        });
+
+        const intentData = await intentResponse.json();
+
+        if (intentData.success) {
+          // Handle based on intent type
+          if (intentData.type === 'ambiguous' && onAmbiguousInput) {
+            setDetectingIntent(false);
+            onAmbiguousInput(intentData);
+            return;
+          }
+
+          if (intentData.type === 'recommendations' && onToolRecommendations) {
+            setDetectingIntent(false);
+            onToolRecommendations(intentData.detectedIndustry);
+            return;
+          }
+        }
+
+        setDetectingIntent(false);
+      } catch (intentError) {
+        console.warn('Intent detection failed, proceeding with generation:', intentError);
+        setDetectingIntent(false);
+      }
+    }
+
+    setGenerating(true);
+    setError(null);
+    setProgress(isToolMode ? '🛠️ Building your tool...' : '🤖 AI is analyzing your request...');
+
+    try {
+      const response = await fetch(`${API_BASE}/api/orchestrate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: inputToUse })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Generation failed');
+      }
+
+      // Show AI decisions (different for tools vs business)
+      if (data.type === 'tool') {
+        setAiDecisions({
+          toolName: data.tool?.template,
+          category: data.tool?.category,
+          features: data.tool?.features?.join(', ')
+        });
+      } else {
+        setAiDecisions(data.orchestrator?.decisions);
+      }
+      setProgress('✅ Complete!');
+
+      // Wait a moment to show the decisions, then complete
+      setTimeout(() => {
+        onComplete(data);
+      }, 2000);
+
+    } catch (err) {
+      setError(err.message || 'Something went wrong');
+      setGenerating(false);
+      setProgress(null);
+    }
+  };
+
+  const handleBlink = () => handleBlinkWithInput(input.trim());
+
+  const orchestratorStyles = {
+    container: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '70vh',
+      padding: '40px 20px',
+      textAlign: 'center'
+    },
+    title: {
+      fontSize: '2.5rem',
+      fontWeight: '700',
+      marginBottom: '8px',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent'
+    },
+    subtitle: {
+      fontSize: '1.1rem',
+      color: '#666',
+      marginBottom: '40px',
+      maxWidth: '500px'
+    },
+    inputContainer: {
+      width: '100%',
+      maxWidth: '700px',
+      marginBottom: '24px'
+    },
+    input: {
+      width: '100%',
+      padding: '20px 24px',
+      fontSize: '1.2rem',
+      border: '2px solid #e2e8f0',
+      borderRadius: '16px',
+      outline: 'none',
+      transition: 'all 0.2s ease',
+      boxSizing: 'border-box'
+    },
+    inputFocused: {
+      borderColor: '#667eea',
+      boxShadow: '0 0 0 4px rgba(102, 126, 234, 0.1)'
+    },
+    blinkButton: {
+      padding: '18px 60px',
+      fontSize: '1.3rem',
+      fontWeight: '700',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      color: 'white',
+      border: 'none',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
+    },
+    blinkButtonDisabled: {
+      opacity: 0.6,
+      cursor: 'not-allowed'
+    },
+    backButton: {
+      marginTop: '24px',
+      padding: '10px 24px',
+      fontSize: '0.9rem',
+      color: '#666',
+      background: 'transparent',
+      border: '1px solid #ddd',
+      borderRadius: '8px',
+      cursor: 'pointer'
+    },
+    progressContainer: {
+      marginTop: '32px',
+      padding: '24px',
+      background: '#f8fafc',
+      borderRadius: '12px',
+      maxWidth: '600px',
+      width: '100%'
+    },
+    progressText: {
+      fontSize: '1.1rem',
+      color: '#333',
+      marginBottom: '16px'
+    },
+    decisionsGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+      gap: '12px',
+      textAlign: 'left'
+    },
+    decisionItem: {
+      padding: '12px 16px',
+      background: 'white',
+      borderRadius: '8px',
+      border: '1px solid #e2e8f0'
+    },
+    decisionLabel: {
+      fontSize: '0.75rem',
+      color: '#666',
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+      marginBottom: '4px'
+    },
+    decisionValue: {
+      fontSize: '0.95rem',
+      color: '#1a1a2e',
+      fontWeight: '500'
+    },
+    error: {
+      marginTop: '16px',
+      padding: '12px 20px',
+      background: '#fee2e2',
+      color: '#dc2626',
+      borderRadius: '8px',
+      fontSize: '0.95rem'
+    },
+    colorPalette: {
+      display: 'flex',
+      gap: '8px',
+      marginTop: '4px'
+    },
+    colorSwatch: {
+      width: '24px',
+      height: '24px',
+      borderRadius: '4px',
+      border: '1px solid rgba(0,0,0,0.1)'
+    }
+  };
+
+  return (
+    <div style={orchestratorStyles.container}>
+      <h1 style={orchestratorStyles.title}>
+        {isToolMode ? '🛠️ Tool Builder' : '🧠 Orchestrator Mode'}
+      </h1>
+      <p style={orchestratorStyles.subtitle}>
+        {isToolMode
+          ? (preselectedTool
+              ? `Creating your ${toolDisplayNames[preselectedTool] || preselectedTool}...`
+              : 'Describe the tool you want to create. AI builds it instantly.')
+          : 'Describe your business in one sentence. AI handles everything else.'
+        }
+      </p>
+
+      {!generating && !preselectedTool && (
+        <>
+          <div style={orchestratorStyles.inputContainer}>
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={isToolMode ? "Describe the tool you want to create..." : placeholder}
+              style={orchestratorStyles.input}
+              onKeyDown={(e) => e.key === 'Enter' && !detectingIntent && handleBlink()}
+              autoFocus
+              disabled={detectingIntent}
+            />
+          </div>
+
+          <button
+            style={{
+              ...orchestratorStyles.blinkButton,
+              ...(input.trim().length < 3 || detectingIntent ? orchestratorStyles.blinkButtonDisabled : {})
+            }}
+            onClick={handleBlink}
+            disabled={input.trim().length < 3 || detectingIntent}
+          >
+            {detectingIntent ? '🔍 Analyzing...' : isToolMode ? '🛠️ BUILD TOOL' : '⚡ BLINK'}
+          </button>
+
+          {/* Suggest Tools Button (only in tool mode) */}
+          {isToolMode && onSuggestTools && (
+            <>
+              {!showSuggestInput ? (
+                <button
+                  style={{
+                    ...orchestratorStyles.backButton,
+                    marginTop: '16px',
+                    background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+                    border: '1px solid #f59e0b',
+                    color: '#92400e'
+                  }}
+                  onClick={() => setShowSuggestInput(true)}
+                >
+                  💡 Not sure? Get tool suggestions for your industry
+                </button>
+              ) : (
+                <div style={{
+                  marginTop: '16px',
+                  padding: '20px',
+                  background: '#fffbeb',
+                  borderRadius: '12px',
+                  border: '1px solid #fde68a',
+                  width: '100%',
+                  maxWidth: '500px'
+                }}>
+                  <p style={{ fontSize: '0.9rem', color: '#92400e', marginBottom: '12px' }}>
+                    What's your profession or industry?
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      value={suggestInput}
+                      onChange={(e) => setSuggestInput(e.target.value)}
+                      placeholder="e.g., freelancer, restaurant, plumber..."
+                      style={{
+                        flex: 1,
+                        padding: '12px 16px',
+                        border: '2px solid #fde68a',
+                        borderRadius: '8px',
+                        fontSize: '1rem'
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && suggestInput.trim()) {
+                          onSuggestTools(suggestInput.trim());
+                        }
+                      }}
+                      autoFocus
+                    />
+                    <button
+                      style={{
+                        padding: '12px 20px',
+                        background: '#f59e0b',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontWeight: '600',
+                        cursor: suggestInput.trim() ? 'pointer' : 'not-allowed',
+                        opacity: suggestInput.trim() ? 1 : 0.5
+                      }}
+                      onClick={() => suggestInput.trim() && onSuggestTools(suggestInput.trim())}
+                      disabled={!suggestInput.trim()}
+                    >
+                      Get Suggestions
+                    </button>
+                  </div>
+                  <button
+                    style={{
+                      marginTop: '12px',
+                      padding: '6px 12px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#92400e',
+                      cursor: 'pointer',
+                      fontSize: '0.85rem'
+                    }}
+                    onClick={() => {
+                      setShowSuggestInput(false);
+                      setSuggestInput('');
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          <button style={orchestratorStyles.backButton} onClick={onBack}>
+            ← Back to options
+          </button>
+
+          {error && (
+            <div style={orchestratorStyles.error}>{error}</div>
+          )}
+        </>
+      )}
+
+      {generating && (
+        <div style={orchestratorStyles.progressContainer}>
+          <div style={orchestratorStyles.progressText}>{progress}</div>
+
+          {aiDecisions && (
+            <div style={orchestratorStyles.decisionsGrid}>
+              {/* Tool-specific decisions */}
+              {aiDecisions.toolName && (
+                <>
+                  <div style={orchestratorStyles.decisionItem}>
+                    <div style={orchestratorStyles.decisionLabel}>Tool Type</div>
+                    <div style={orchestratorStyles.decisionValue}>{aiDecisions.toolName}</div>
+                  </div>
+                  <div style={orchestratorStyles.decisionItem}>
+                    <div style={orchestratorStyles.decisionLabel}>Category</div>
+                    <div style={orchestratorStyles.decisionValue}>{aiDecisions.category}</div>
+                  </div>
+                  {aiDecisions.features && (
+                    <div style={{...orchestratorStyles.decisionItem, gridColumn: '1 / -1'}}>
+                      <div style={orchestratorStyles.decisionLabel}>Features</div>
+                      <div style={orchestratorStyles.decisionValue}>{aiDecisions.features}</div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Business-specific decisions */}
+              {aiDecisions.businessName && (
+                <>
+                  <div style={orchestratorStyles.decisionItem}>
+                    <div style={orchestratorStyles.decisionLabel}>Business Name</div>
+                    <div style={orchestratorStyles.decisionValue}>{aiDecisions.businessName}</div>
+                  </div>
+                  <div style={orchestratorStyles.decisionItem}>
+                    <div style={orchestratorStyles.decisionLabel}>Industry</div>
+                    <div style={orchestratorStyles.decisionValue}>{aiDecisions.industryName}</div>
+                  </div>
+                  <div style={orchestratorStyles.decisionItem}>
+                    <div style={orchestratorStyles.decisionLabel}>Location</div>
+                    <div style={orchestratorStyles.decisionValue}>{aiDecisions.location || 'Not specified'}</div>
+                  </div>
+                  <div style={orchestratorStyles.decisionItem}>
+                    <div style={orchestratorStyles.decisionLabel}>Pages</div>
+                    <div style={orchestratorStyles.decisionValue}>{aiDecisions.pages?.length || 0} pages</div>
+                  </div>
+                  <div style={orchestratorStyles.decisionItem}>
+                    <div style={orchestratorStyles.decisionLabel}>Modules</div>
+                    <div style={orchestratorStyles.decisionValue}>{aiDecisions.modules?.length || 0} modules</div>
+                  </div>
+                  {aiDecisions.colors && (
+                    <div style={orchestratorStyles.decisionItem}>
+                      <div style={orchestratorStyles.decisionLabel}>Colors</div>
+                      <div style={orchestratorStyles.colorPalette}>
+                        <div style={{...orchestratorStyles.colorSwatch, background: aiDecisions.colors.primary}} title="Primary" />
+                        <div style={{...orchestratorStyles.colorSwatch, background: aiDecisions.colors.accent}} title="Accent" />
+                      </div>
+                    </div>
+                  )}
+                  {aiDecisions.tagline && (
+                    <div style={{...orchestratorStyles.decisionItem, gridColumn: '1 / -1'}}>
+                      <div style={orchestratorStyles.decisionLabel}>Tagline</div>
+                      <div style={orchestratorStyles.decisionValue}>"{aiDecisions.tagline}"</div>
+                    </div>
+                  )}
+                  <div style={orchestratorStyles.decisionItem}>
+                    <div style={orchestratorStyles.decisionLabel}>Confidence</div>
+                    <div style={orchestratorStyles.decisionValue}>
+                      {aiDecisions.confidence === 'high' ? '🟢 High' :
+                       aiDecisions.confidence === 'medium' ? '🟡 Medium' : '🟠 Low'}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1809,28 +2920,56 @@ function QuickStep({ industries, projectData, updateProject, onContinue, onBack 
 // ============================================
 function UploadAssetsStep({ projectData, updateProject, onContinue, onBack, onSkip }) {
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({});
   const [extractingColors, setExtractingColors] = useState(false);
-  
-  // Handle logo upload
+  const [detectedStyle, setDetectedStyle] = useState(null);
+  const [dragOver, setDragOver] = useState({ logo: false, photos: false, menu: false });
+  const [showAIGenerator, setShowAIGenerator] = useState(false);
+
+  // Responsive layout detection
+  const { width } = useWindowSize();
+  const layoutMode = getLayoutMode(width);
+  const isMobile = layoutMode === 'mobile';
+  const isDesktop = layoutMode === 'desktop' || layoutMode === 'largeDesktop';
+
+  // Visual style options for auto-detection
+  const visualStyles = [
+    { id: 'modern', label: 'Modern & Clean', keywords: ['sharp', 'geometric', 'minimal'] },
+    { id: 'warm', label: 'Warm & Inviting', keywords: ['wood', 'earth', 'cozy'] },
+    { id: 'bold', label: 'Bold & Dynamic', keywords: ['contrast', 'vibrant', 'energetic'] },
+    { id: 'elegant', label: 'Elegant & Premium', keywords: ['luxury', 'refined', 'sophisticated'] },
+    { id: 'playful', label: 'Playful & Fun', keywords: ['colorful', 'friendly', 'approachable'] },
+    { id: 'minimal', label: 'Minimalist', keywords: ['simple', 'whitespace', 'focused'] },
+  ];
+
+  // Handle logo upload with drag-drop support
   const handleLogoUpload = async (e) => {
-    const file = e.target.files[0];
+    const file = e.target?.files?.[0] || e.dataTransfer?.files?.[0];
     if (!file) return;
-    
+
     setUploading(true);
-    
-    // Convert to base64 for preview and storage
+    setUploadProgress({ ...uploadProgress, logo: 0 });
+
+    // Simulate progress
+    const progressInterval = setInterval(() => {
+      setUploadProgress(prev => ({ ...prev, logo: Math.min((prev.logo || 0) + 20, 90) }));
+    }, 100);
+
     const reader = new FileReader();
     reader.onload = async (event) => {
+      clearInterval(progressInterval);
+      setUploadProgress(prev => ({ ...prev, logo: 100 }));
+
       const base64 = event.target.result;
-      
+
       updateProject({
         uploadedAssets: {
           ...projectData.uploadedAssets,
           logo: { file: file.name, base64, type: file.type }
         }
       });
-      
-      // Extract colors from logo using canvas
+
+      // Extract colors from logo
       setExtractingColors(true);
       try {
         const colors = await extractColorsFromImage(base64);
@@ -1844,53 +2983,98 @@ function UploadAssetsStep({ projectData, updateProject, onContinue, onBack, onSk
             },
             colorMode: 'from-logo'
           });
+
+          // Auto-detect visual style based on colors
+          detectVisualStyle(colors);
         }
       } catch (err) {
         console.error('Color extraction failed:', err);
       }
       setExtractingColors(false);
       setUploading(false);
+      setTimeout(() => setUploadProgress(prev => ({ ...prev, logo: null })), 500);
     };
     reader.readAsDataURL(file);
   };
-  
-  // Handle product/gallery photos upload
-  const handlePhotosUpload = (e) => {
-    const files = Array.from(e.target.files).slice(0, 10);
+
+  // Detect visual style based on colors
+  const detectVisualStyle = (colors) => {
+    const primary = colors.primary;
+    const r = parseInt(primary.slice(1, 3), 16);
+    const g = parseInt(primary.slice(3, 5), 16);
+    const b = parseInt(primary.slice(5, 7), 16);
+
+    // Simple heuristics for style detection
+    const brightness = (r + g + b) / 3;
+    const saturation = Math.max(r, g, b) - Math.min(r, g, b);
+
+    let style = 'modern';
+    if (saturation < 50 && brightness > 150) style = 'minimal';
+    else if (r > 180 && g < 100) style = 'bold';
+    else if (r > 150 && g > 100 && b < 100) style = 'warm';
+    else if (saturation > 150) style = 'playful';
+    else if (brightness < 80) style = 'elegant';
+
+    setDetectedStyle(style);
+    updateProject({ detectedVisualStyle: style });
+  };
+
+  // Handle photos upload with progress
+  const handlePhotosUpload = async (e) => {
+    const files = Array.from(e.target?.files || e.dataTransfer?.files || []).slice(0, 10);
     if (files.length === 0) return;
-    
+
     setUploading(true);
-    
-    const promises = files.map(file => {
+
+    const promises = files.map((file, idx) => {
       return new Promise((resolve) => {
+        setUploadProgress(prev => ({ ...prev, [`photo_${idx}`]: 0 }));
+
+        const progressInterval = setInterval(() => {
+          setUploadProgress(prev => ({
+            ...prev,
+            [`photo_${idx}`]: Math.min((prev[`photo_${idx}`] || 0) + 15, 90)
+          }));
+        }, 50);
+
         const reader = new FileReader();
         reader.onload = (event) => {
+          clearInterval(progressInterval);
+          setUploadProgress(prev => ({ ...prev, [`photo_${idx}`]: 100 }));
           resolve({ file: file.name, base64: event.target.result, type: file.type });
         };
         reader.readAsDataURL(file);
       });
     });
-    
-    Promise.all(promises).then(photos => {
-      updateProject({
-        uploadedAssets: {
-          ...projectData.uploadedAssets,
-          photos: [...(projectData.uploadedAssets?.photos || []), ...photos].slice(0, 10)
-        }
-      });
-      setUploading(false);
+
+    const photos = await Promise.all(promises);
+    updateProject({
+      uploadedAssets: {
+        ...projectData.uploadedAssets,
+        photos: [...(projectData.uploadedAssets?.photos || []), ...photos].slice(0, 10)
+      }
     });
+    setUploading(false);
+    setTimeout(() => setUploadProgress({}), 500);
   };
-  
-  // Handle menu/pricing upload (image or PDF)
+
+  // Handle menu upload
   const handleMenuUpload = (e) => {
-    const file = e.target.files[0];
+    const file = e.target?.files?.[0] || e.dataTransfer?.files?.[0];
     if (!file) return;
-    
+
     setUploading(true);
-    
+    setUploadProgress({ ...uploadProgress, menu: 0 });
+
+    const progressInterval = setInterval(() => {
+      setUploadProgress(prev => ({ ...prev, menu: Math.min((prev.menu || 0) + 25, 90) }));
+    }, 100);
+
     const reader = new FileReader();
     reader.onload = (event) => {
+      clearInterval(progressInterval);
+      setUploadProgress(prev => ({ ...prev, menu: 100 }));
+
       updateProject({
         uploadedAssets: {
           ...projectData.uploadedAssets,
@@ -1898,31 +3082,50 @@ function UploadAssetsStep({ projectData, updateProject, onContinue, onBack, onSk
         }
       });
       setUploading(false);
+      setTimeout(() => setUploadProgress(prev => ({ ...prev, menu: null })), 500);
     };
     reader.readAsDataURL(file);
   };
-  
-  // Remove uploaded item
+
+  // Drag and drop handlers
+  const handleDragOver = (e, zone) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(prev => ({ ...prev, [zone]: true }));
+  };
+
+  const handleDragLeave = (e, zone) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(prev => ({ ...prev, [zone]: false }));
+  };
+
+  const handleDrop = (e, zone, handler) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(prev => ({ ...prev, [zone]: false }));
+    handler(e);
+  };
+
+  // Remove handlers
   const removePhoto = (index) => {
     const photos = [...(projectData.uploadedAssets?.photos || [])];
     photos.splice(index, 1);
-    updateProject({
-      uploadedAssets: { ...projectData.uploadedAssets, photos }
-    });
+    updateProject({ uploadedAssets: { ...projectData.uploadedAssets, photos } });
   };
-  
+
   const removeLogo = () => {
     updateProject({
-      uploadedAssets: { ...projectData.uploadedAssets, logo: null }
+      uploadedAssets: { ...projectData.uploadedAssets, logo: null },
+      colorMode: null
     });
+    setDetectedStyle(null);
   };
-  
+
   const removeMenu = () => {
-    updateProject({
-      uploadedAssets: { ...projectData.uploadedAssets, menu: null }
-    });
+    updateProject({ uploadedAssets: { ...projectData.uploadedAssets, menu: null } });
   };
-  
+
   // Extract colors from image using canvas
   const extractColorsFromImage = (base64) => {
     return new Promise((resolve) => {
@@ -1934,8 +3137,7 @@ function UploadAssetsStep({ projectData, updateProject, onContinue, onBack, onSk
         canvas.width = img.width;
         canvas.height = img.height;
         ctx.drawImage(img, 0, 0);
-        
-        // Sample colors from different regions
+
         const colors = [];
         const samplePoints = [
           { x: img.width * 0.25, y: img.height * 0.25 },
@@ -1944,18 +3146,17 @@ function UploadAssetsStep({ projectData, updateProject, onContinue, onBack, onSk
           { x: img.width * 0.1, y: img.height * 0.1 },
           { x: img.width * 0.9, y: img.height * 0.1 },
         ];
-        
+
         samplePoints.forEach(point => {
           try {
             const data = ctx.getImageData(Math.floor(point.x), Math.floor(point.y), 1, 1).data;
-            if (data[3] > 50) { // Only if not too transparent
+            if (data[3] > 50) {
               const hex = '#' + [data[0], data[1], data[2]].map(x => x.toString(16).padStart(2, '0')).join('');
               colors.push(hex);
             }
           } catch (e) {}
         });
-        
-        // Filter out whites, blacks, and grays
+
         const validColors = colors.filter(c => {
           const r = parseInt(c.slice(1, 3), 16);
           const g = parseInt(c.slice(3, 5), 16);
@@ -1965,19 +3166,11 @@ function UploadAssetsStep({ projectData, updateProject, onContinue, onBack, onSk
           const isTooDark = r < 15 && g < 15 && b < 15;
           return !isGray && !isTooLight && !isTooDark;
         });
-        
+
         if (validColors.length >= 2) {
-          resolve({
-            primary: validColors[0],
-            secondary: validColors[1],
-            accent: validColors[2] || validColors[0]
-          });
+          resolve({ primary: validColors[0], secondary: validColors[1], accent: validColors[2] || validColors[0] });
         } else if (validColors.length === 1) {
-          resolve({
-            primary: validColors[0],
-            secondary: validColors[0],
-            accent: validColors[0]
-          });
+          resolve({ primary: validColors[0], secondary: validColors[0], accent: validColors[0] });
         } else {
           resolve(null);
         }
@@ -1986,160 +3179,1037 @@ function UploadAssetsStep({ projectData, updateProject, onContinue, onBack, onSk
       img.src = base64;
     });
   };
-  
+
   const assets = projectData.uploadedAssets || {};
   const hasAnyAssets = assets.logo || (assets.photos && assets.photos.length > 0) || assets.menu;
 
+  // Responsive styles for upload step
+  const uploadResponsiveStyles = {
+    container: {
+      maxWidth: isDesktop ? '1400px' : '100%',
+      margin: '0 auto',
+      padding: isMobile ? '16px' : '32px'
+    },
+    grid: {
+      display: isDesktop ? 'grid' : 'flex',
+      gridTemplateColumns: isDesktop ? '1fr 1fr' : undefined,
+      flexDirection: isDesktop ? undefined : 'column',
+      gap: isMobile ? '16px' : '24px'
+    },
+    fullWidth: {
+      gridColumn: isDesktop ? 'span 2' : undefined
+    }
+  };
+
   return (
-    <div style={styles.stepContainer}>
+    <div style={{...styles.stepContainer, ...uploadResponsiveStyles.container}}>
       <button style={styles.backBtn} onClick={onBack}>← Back</button>
-      
-      <h1 style={styles.stepTitle}>📸 Upload Your Assets</h1>
-      <p style={styles.stepSubtitle}>Add your logo, photos, and menu for a personalized website</p>
-      
-      {/* Logo Upload */}
-      <div style={styles.uploadSection}>
-        <div style={styles.uploadHeader}>
-          <span style={styles.uploadIcon}>🎨</span>
-          <div>
-            <h3 style={styles.uploadTitle}>Logo</h3>
-            <p style={styles.uploadDesc}>We'll extract your brand colors automatically</p>
+
+      <h1 style={{...styles.stepTitle, fontSize: isMobile ? '24px' : '32px'}}>
+        📸 Upload Your Assets
+      </h1>
+      <p style={{...styles.stepSubtitle, maxWidth: '600px', margin: '0 auto 32px'}}>
+        Your logo and photos will be used throughout your website. We'll automatically extract colors and detect your visual style.
+      </p>
+
+      {/* Smart Detection Banner - shown when style is detected */}
+      {detectedStyle && (
+        <div style={uploadStyles.detectionBanner}>
+          <div style={uploadStyles.detectionIcon}>✨</div>
+          <div style={uploadStyles.detectionContent}>
+            <strong>Based on your uploads, we detected:</strong>
+            <span style={uploadStyles.detectedStyle}>
+              {visualStyles.find(s => s.id === detectedStyle)?.label || 'Modern & Clean'} Style
+            </span>
+          </div>
+          <button
+            style={uploadStyles.changeStyleBtn}
+            onClick={() => setDetectedStyle(null)}
+          >
+            Change
+          </button>
+        </div>
+      )}
+
+      <div style={uploadResponsiveStyles.grid}>
+        {/* LEFT COLUMN: Logo & Colors */}
+        <div style={uploadStyles.column}>
+          {/* Logo Upload */}
+          <div style={uploadStyles.uploadCard}>
+            <div style={uploadStyles.cardHeader}>
+              <div style={uploadStyles.cardTitleRow}>
+                <span style={uploadStyles.cardIcon}>🎨</span>
+                <div>
+                  <h3 style={uploadStyles.cardTitle}>Your Logo</h3>
+                  <span style={uploadStyles.cardBadge}>Recommended</span>
+                </div>
+              </div>
+              <div
+                style={uploadStyles.tooltip}
+                title="Your logo appears in the header, footer, and favicon. We'll also extract your brand colors from it."
+              >
+                ⓘ
+              </div>
+            </div>
+
+            <p style={uploadStyles.cardDesc}>
+              We'll extract brand colors and use it across your site header, footer, and favicon.
+            </p>
+
+            {assets.logo ? (
+              <div style={uploadStyles.uploadedPreview}>
+                <div style={uploadStyles.logoPreviewContainer}>
+                  <img src={assets.logo.base64} alt="Logo" style={uploadStyles.logoPreview} />
+                </div>
+                <div style={uploadStyles.uploadedDetails}>
+                  <span style={uploadStyles.fileName}>{assets.logo.file}</span>
+                  {extractingColors && (
+                    <div style={uploadStyles.extractingRow}>
+                      <div style={uploadStyles.spinner} />
+                      <span>Extracting colors...</span>
+                    </div>
+                  )}
+                  {projectData.colorMode === 'from-logo' && !extractingColors && (
+                    <div style={uploadStyles.extractedColors}>
+                      <span style={uploadStyles.extractedLabel}>Extracted Colors:</span>
+                      <div style={uploadStyles.colorSwatches}>
+                        <div style={{...uploadStyles.colorSwatch, background: projectData.colors.primary}}>
+                          <span style={uploadStyles.colorLabel}>Primary</span>
+                        </div>
+                        <div style={{...uploadStyles.colorSwatch, background: projectData.colors.secondary}}>
+                          <span style={uploadStyles.colorLabel}>Secondary</span>
+                        </div>
+                        <div style={{...uploadStyles.colorSwatch, background: projectData.colors.accent}}>
+                          <span style={uploadStyles.colorLabel}>Accent</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <button style={uploadStyles.removeButton} onClick={removeLogo}>
+                    <span>✕</span> Remove & Re-upload
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label
+                style={{
+                  ...uploadStyles.dropzone,
+                  ...(dragOver.logo ? uploadStyles.dropzoneActive : {})
+                }}
+                onDragOver={(e) => handleDragOver(e, 'logo')}
+                onDragLeave={(e) => handleDragLeave(e, 'logo')}
+                onDrop={(e) => handleDrop(e, 'logo', handleLogoUpload)}
+              >
+                <input type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
+
+                {/* Example placeholder */}
+                <div style={uploadStyles.exampleContainer}>
+                  <div style={uploadStyles.exampleLogo}>
+                    <span style={uploadStyles.exampleIcon}>🏢</span>
+                  </div>
+                  <span style={uploadStyles.exampleText}>Your logo here</span>
+                </div>
+
+                <div style={uploadStyles.dropzoneContent}>
+                  <span style={uploadStyles.dropzoneMainIcon}>
+                    {dragOver.logo ? '📥' : '📤'}
+                  </span>
+                  <span style={uploadStyles.dropzoneMainText}>
+                    {dragOver.logo ? 'Drop your logo!' : 'Drag logo here or click to browse'}
+                  </span>
+                  <span style={uploadStyles.dropzoneHint}>
+                    PNG, JPG, or SVG • Transparent background works best
+                  </span>
+                </div>
+
+                {uploadProgress.logo !== undefined && uploadProgress.logo !== null && (
+                  <div style={uploadStyles.progressBar}>
+                    <div style={{...uploadStyles.progressFill, width: `${uploadProgress.logo}%`}} />
+                  </div>
+                )}
+              </label>
+            )}
           </div>
         </div>
-        
-        {assets.logo ? (
-          <div style={styles.uploadedItem}>
-            <img src={assets.logo.base64} alt="Logo" style={styles.uploadedLogo} />
-            <div style={styles.uploadedInfo}>
-              <span>{assets.logo.file}</span>
-              {extractingColors && <span style={styles.extractingText}>🎨 Extracting colors...</span>}
-              {projectData.colorMode === 'from-logo' && (
-                <div style={styles.extractedColorsPreview}>
-                  <span>Extracted:</span>
-                  <div style={{...styles.colorDotSmall, background: projectData.colors.primary}} />
-                  <div style={{...styles.colorDotSmall, background: projectData.colors.secondary}} />
-                  <div style={{...styles.colorDotSmall, background: projectData.colors.accent}} />
+
+        {/* RIGHT COLUMN: Photos */}
+        <div style={uploadStyles.column}>
+          {/* Product Photos Upload */}
+          <div style={uploadStyles.uploadCard}>
+            <div style={uploadStyles.cardHeader}>
+              <div style={uploadStyles.cardTitleRow}>
+                <span style={uploadStyles.cardIcon}>🖼️</span>
+                <div>
+                  <h3 style={uploadStyles.cardTitle}>Product & Gallery Photos</h3>
+                  <span style={uploadStyles.cardBadgeOptional}>Up to 10</span>
                 </div>
+              </div>
+              <div
+                style={uploadStyles.tooltip}
+                title="These photos appear in your gallery, product sections, and as background images throughout the site."
+              >
+                ⓘ
+              </div>
+            </div>
+
+            <p style={uploadStyles.cardDesc}>
+              High-quality photos of your products, services, team, or location. These create the visual foundation of your site.
+            </p>
+
+            <div style={uploadStyles.photoGridContainer}>
+              {/* Uploaded photos */}
+              {(assets.photos || []).map((photo, index) => (
+                <div key={index} style={uploadStyles.photoItem}>
+                  <img src={photo.base64} alt={`Photo ${index + 1}`} style={uploadStyles.photoThumb} />
+                  <div style={uploadStyles.photoOverlay}>
+                    <button style={uploadStyles.photoRemove} onClick={() => removePhoto(index)}>✕</button>
+                  </div>
+                  <span style={uploadStyles.photoNumber}>{index + 1}</span>
+                </div>
+              ))}
+
+              {/* Add more button */}
+              {(!assets.photos || assets.photos.length < 10) && (
+                <label
+                  style={{
+                    ...uploadStyles.photoAddZone,
+                    ...(dragOver.photos ? uploadStyles.photoAddZoneActive : {})
+                  }}
+                  onDragOver={(e) => handleDragOver(e, 'photos')}
+                  onDragLeave={(e) => handleDragLeave(e, 'photos')}
+                  onDrop={(e) => handleDrop(e, 'photos', handlePhotosUpload)}
+                >
+                  <input type="file" accept="image/*" multiple onChange={handlePhotosUpload} style={{ display: 'none' }} />
+                  <span style={uploadStyles.photoAddIcon}>+</span>
+                  <span style={uploadStyles.photoAddText}>
+                    {assets.photos?.length ? 'Add More' : 'Add Photos'}
+                  </span>
+                </label>
               )}
             </div>
-            <button style={styles.removeBtn} onClick={removeLogo}>✕</button>
-          </div>
-        ) : (
-          <label style={styles.uploadDropzone}>
-            <input type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
-            <span style={styles.dropzoneIcon}>📤</span>
-            <span>Drop logo here or click to upload</span>
-            <span style={styles.dropzoneHint}>PNG, JPG, SVG • Max 5MB</span>
-          </label>
-        )}
-      </div>
-      
-      {/* Product Photos Upload */}
-      <div style={styles.uploadSection}>
-        <div style={styles.uploadHeader}>
-          <span style={styles.uploadIcon}>🖼️</span>
-          <div>
-            <h3 style={styles.uploadTitle}>Product / Gallery Photos</h3>
-            <p style={styles.uploadDesc}>Up to 10 photos for your gallery and product sections</p>
+
+            {assets.photos && assets.photos.length > 0 && (
+              <div style={uploadStyles.photoCount}>
+                <span>{assets.photos.length}/10 photos</span>
+                <button style={uploadStyles.clearAllBtn} onClick={() => updateProject({ uploadedAssets: { ...assets, photos: [] }})}>
+                  Clear all
+                </button>
+              </div>
+            )}
+
+            {/* AI Placeholder Generator */}
+            {(!assets.photos || assets.photos.length === 0) && (
+              <div style={uploadStyles.aiGeneratorSection}>
+                <button
+                  style={uploadStyles.aiGeneratorBtn}
+                  onClick={() => setShowAIGenerator(!showAIGenerator)}
+                >
+                  <span>🤖</span>
+                  <span>Don't have photos? Use AI placeholders</span>
+                </button>
+
+                {showAIGenerator && (
+                  <div style={uploadStyles.aiGeneratorPanel}>
+                    <p style={uploadStyles.aiGeneratorDesc}>
+                      We'll generate professional placeholder images based on your business type.
+                      You can replace them with real photos anytime.
+                    </p>
+                    <button
+                      style={uploadStyles.generateBtn}
+                      onClick={() => {
+                        updateProject({ useAIPlaceholders: true });
+                        setShowAIGenerator(false);
+                      }}
+                    >
+                      ✨ Generate {projectData.industry?.name || 'Business'} Placeholders
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
-        
-        <div style={styles.photoGrid}>
-          {(assets.photos || []).map((photo, index) => (
-            <div key={index} style={styles.photoItem}>
-              <img src={photo.base64} alt={`Photo ${index + 1}`} style={styles.photoThumb} />
-              <button style={styles.photoRemoveBtn} onClick={() => removePhoto(index)}>✕</button>
+
+        {/* FULL WIDTH: Menu/Pricing */}
+        <div style={{...uploadStyles.uploadCard, ...uploadResponsiveStyles.fullWidth}}>
+          <div style={uploadStyles.cardHeader}>
+            <div style={uploadStyles.cardTitleRow}>
+              <span style={uploadStyles.cardIcon}>📋</span>
+              <div>
+                <h3 style={uploadStyles.cardTitle}>Menu or Price List</h3>
+                <span style={uploadStyles.cardBadgeOptional}>Optional</span>
+              </div>
             </div>
-          ))}
-          
-          {(!assets.photos || assets.photos.length < 10) && (
-            <label style={styles.photoAddBtn}>
-              <input type="file" accept="image/*" multiple onChange={handlePhotosUpload} style={{ display: 'none' }} />
-              <span>+</span>
-              <span style={styles.photoAddText}>Add Photos</span>
-            </label>
+            <div
+              style={uploadStyles.tooltip}
+              title="If you have a menu, price list, or service catalog, upload it and our AI will extract the content for your website."
+            >
+              ⓘ
+            </div>
+          </div>
+
+          {assets.menu ? (
+            <div style={uploadStyles.menuUploaded}>
+              <div style={uploadStyles.menuPreviewLarge}>
+                {assets.menu.type.includes('image') ? (
+                  <img src={assets.menu.base64} alt="Menu" style={uploadStyles.menuImage} />
+                ) : (
+                  <div style={uploadStyles.pdfPreview}>
+                    <span style={uploadStyles.pdfIcon}>📄</span>
+                    <span>PDF Document</span>
+                  </div>
+                )}
+              </div>
+              <div style={uploadStyles.menuDetails}>
+                <span style={uploadStyles.fileName}>{assets.menu.file}</span>
+                <span style={uploadStyles.menuType}>
+                  {assets.menu.type.includes('pdf') ? 'PDF' : 'Image'}
+                </span>
+                <p style={uploadStyles.menuHint}>
+                  ✨ AI will extract items and prices from this file
+                </p>
+                <button style={uploadStyles.removeButton} onClick={removeMenu}>
+                  <span>✕</span> Remove
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={uploadStyles.menuDropzoneRow}>
+              <label
+                style={{
+                  ...uploadStyles.menuDropzone,
+                  ...(dragOver.menu ? uploadStyles.dropzoneActive : {})
+                }}
+                onDragOver={(e) => handleDragOver(e, 'menu')}
+                onDragLeave={(e) => handleDragLeave(e, 'menu')}
+                onDrop={(e) => handleDrop(e, 'menu', handleMenuUpload)}
+              >
+                <input type="file" accept="image/*,.pdf" onChange={handleMenuUpload} style={{ display: 'none' }} />
+                <span style={uploadStyles.menuDropzoneIcon}>📋</span>
+                <span style={uploadStyles.menuDropzoneText}>Drop menu or price list</span>
+                <span style={uploadStyles.dropzoneHint}>PDF or Image</span>
+              </label>
+
+              <div style={uploadStyles.menuExamples}>
+                <span style={uploadStyles.menuExamplesTitle}>Works great for:</span>
+                <ul style={uploadStyles.menuExamplesList}>
+                  <li>🍽️ Restaurant menus</li>
+                  <li>💇 Service price lists</li>
+                  <li>🏋️ Class schedules</li>
+                  <li>📦 Product catalogs</li>
+                </ul>
+              </div>
+            </div>
           )}
         </div>
-        
-        {assets.photos && assets.photos.length > 0 && (
-          <p style={styles.photoCount}>{assets.photos.length}/10 photos uploaded</p>
-        )}
-      </div>
-      
-      {/* Menu/Pricing Upload */}
-      <div style={styles.uploadSection}>
-        <div style={styles.uploadHeader}>
-          <span style={styles.uploadIcon}>📋</span>
-          <div>
-            <h3 style={styles.uploadTitle}>Menu / Price List (Optional)</h3>
-            <p style={styles.uploadDesc}>Upload your menu or pricing - AI will extract and use it</p>
-          </div>
-        </div>
-        
-        {assets.menu ? (
-          <div style={styles.uploadedItem}>
-            <div style={styles.menuPreview}>
-              {assets.menu.type.includes('image') ? (
-                <img src={assets.menu.base64} alt="Menu" style={styles.menuThumb} />
-              ) : (
-                <span style={styles.menuFileIcon}>📄</span>
-              )}
+
+        {/* FULL WIDTH: Visual Style Description */}
+        <div style={{...uploadStyles.uploadCard, ...uploadResponsiveStyles.fullWidth}}>
+          <div style={uploadStyles.cardHeader}>
+            <div style={uploadStyles.cardTitleRow}>
+              <span style={uploadStyles.cardIcon}>✨</span>
+              <div>
+                <h3 style={uploadStyles.cardTitle}>Describe Your Visual Style</h3>
+                <span style={uploadStyles.cardBadgeOptional}>Optional</span>
+              </div>
             </div>
-            <div style={styles.uploadedInfo}>
-              <span>{assets.menu.file}</span>
-              <span style={styles.menuTypeTag}>{assets.menu.type.includes('pdf') ? 'PDF' : 'Image'}</span>
-            </div>
-            <button style={styles.removeBtn} onClick={removeMenu}>✕</button>
           </div>
-        ) : (
-          <label style={styles.uploadDropzone}>
-            <input type="file" accept="image/*,.pdf" onChange={handleMenuUpload} style={{ display: 'none' }} />
-            <span style={styles.dropzoneIcon}>📤</span>
-            <span>Drop menu/price list here or click to upload</span>
-            <span style={styles.dropzoneHint}>PDF or Image • Max 10MB</span>
-          </label>
-        )}
-      </div>
-      
-      {/* Image Description */}
-      <div style={styles.uploadSection}>
-        <div style={styles.uploadHeader}>
-          <span style={styles.uploadIcon}>✍️</span>
-          <div>
-            <h3 style={styles.uploadTitle}>Describe Your Visual Style (Optional)</h3>
-            <p style={styles.uploadDesc}>Tell AI what kind of images and vibe you want</p>
+
+          <p style={uploadStyles.cardDesc}>
+            Tell our AI what kind of look and feel you want. Be as specific as you like!
+          </p>
+
+          {/* Quick style chips */}
+          <div style={uploadStyles.styleChips}>
+            {['Modern & minimal', 'Warm & cozy', 'Bold & vibrant', 'Elegant & premium', 'Fun & playful', 'Dark & moody'].map(style => (
+              <button
+                key={style}
+                style={{
+                  ...uploadStyles.styleChip,
+                  ...(projectData.imageDescription?.includes(style) ? uploadStyles.styleChipActive : {})
+                }}
+                onClick={() => {
+                  const current = projectData.imageDescription || '';
+                  if (current.includes(style)) {
+                    updateProject({ imageDescription: current.replace(style, '').trim() });
+                  } else {
+                    updateProject({ imageDescription: current ? `${current}, ${style}` : style });
+                  }
+                }}
+              >
+                {style}
+              </button>
+            ))}
           </div>
+
+          <textarea
+            value={projectData.imageDescription || ''}
+            onChange={(e) => updateProject({ imageDescription: e.target.value })}
+            placeholder="Example: 'I want a warm, rustic feel with wood textures and earth tones. Think artisan coffee shop meets modern design studio. Lots of natural light and friendly vibes.'"
+            style={uploadStyles.styleTextarea}
+            rows={3}
+          />
         </div>
-        
-        <textarea
-          value={projectData.imageDescription || ''}
-          onChange={(e) => updateProject({ imageDescription: e.target.value })}
-          placeholder="e.g., 'Warm, rustic wood backgrounds', 'Modern and minimal with lots of white space', 'Dark and moody with gold accents', 'Bright and colorful, family-friendly vibe'"
-          style={styles.styleTextarea}
-          rows={3}
-        />
       </div>
-      
+
+      {/* Asset Summary */}
+      {hasAnyAssets && (
+        <div style={uploadStyles.assetSummary}>
+          <span style={uploadStyles.summaryIcon}>✅</span>
+          <span style={uploadStyles.summaryText}>
+            {assets.logo && '1 logo'}
+            {assets.logo && assets.photos?.length ? ', ' : ''}
+            {assets.photos?.length ? `${assets.photos.length} photo${assets.photos.length > 1 ? 's' : ''}` : ''}
+            {(assets.logo || assets.photos?.length) && assets.menu ? ', ' : ''}
+            {assets.menu && '1 menu/price list'}
+            {' ready to use'}
+          </span>
+        </div>
+      )}
+
       {/* Action Buttons */}
-      <div style={styles.uploadActions}>
-        <button style={styles.skipBtn} onClick={onSkip}>
-          Skip for now →
+      <div style={uploadStyles.actions}>
+        <button
+          style={uploadStyles.skipButton}
+          onClick={onSkip}
+        >
+          Skip for now
         </button>
-        <button 
-          style={{...styles.continueBtn, opacity: uploading ? 0.5 : 1}}
+        <button
+          style={{...uploadStyles.continueButton, opacity: uploading ? 0.5 : 1}}
           onClick={onContinue}
           disabled={uploading}
         >
-          {hasAnyAssets ? 'Continue with Assets →' : 'Continue →'}
+          {uploading ? (
+            <>
+              <div style={uploadStyles.buttonSpinner} />
+              Uploading...
+            </>
+          ) : hasAnyAssets ? (
+            'Continue with Assets →'
+          ) : (
+            'Continue →'
+          )}
         </button>
       </div>
-      
-      <p style={styles.uploadHint}>
-        💡 Uploaded assets will be used in your generated pages. You can always change them later.
-      </p>
     </div>
   );
 }
+
+// Styles for improved Upload Assets Step
+const uploadStyles = {
+  column: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px'
+  },
+  uploadCard: {
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '16px',
+    padding: '24px',
+  },
+  cardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '12px'
+  },
+  cardTitleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  cardIcon: {
+    fontSize: '28px'
+  },
+  cardTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#fff',
+    margin: 0
+  },
+  cardBadge: {
+    display: 'inline-block',
+    padding: '2px 8px',
+    background: 'rgba(34, 197, 94, 0.15)',
+    borderRadius: '4px',
+    fontSize: '11px',
+    color: '#22c55e',
+    fontWeight: '500',
+    marginTop: '4px'
+  },
+  cardBadgeOptional: {
+    display: 'inline-block',
+    padding: '2px 8px',
+    background: 'rgba(255,255,255,0.05)',
+    borderRadius: '4px',
+    fontSize: '11px',
+    color: '#888',
+    marginTop: '4px'
+  },
+  cardDesc: {
+    fontSize: '14px',
+    color: '#888',
+    marginBottom: '16px',
+    lineHeight: '1.5'
+  },
+  tooltip: {
+    fontSize: '16px',
+    color: '#666',
+    cursor: 'help'
+  },
+  // Dropzone styles
+  dropzone: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '16px',
+    padding: '32px 24px',
+    background: 'rgba(0,0,0,0.2)',
+    border: '2px dashed rgba(255,255,255,0.15)',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  dropzoneActive: {
+    borderColor: '#22c55e',
+    background: 'rgba(34, 197, 94, 0.1)',
+    transform: 'scale(1.01)'
+  },
+  dropzoneContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  dropzoneMainIcon: {
+    fontSize: '36px'
+  },
+  dropzoneMainText: {
+    fontSize: '15px',
+    color: '#e4e4e4',
+    fontWeight: '500'
+  },
+  dropzoneHint: {
+    fontSize: '12px',
+    color: '#666'
+  },
+  // Example placeholder in dropzone
+  exampleContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '16px',
+    opacity: 0.5
+  },
+  exampleLogo: {
+    width: '60px',
+    height: '60px',
+    background: 'rgba(255,255,255,0.1)',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '1px dashed rgba(255,255,255,0.2)'
+  },
+  exampleIcon: {
+    fontSize: '24px',
+    opacity: 0.5
+  },
+  exampleText: {
+    fontSize: '12px',
+    color: '#666'
+  },
+  // Progress bar
+  progressBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '4px',
+    background: 'rgba(255,255,255,0.1)'
+  },
+  progressFill: {
+    height: '100%',
+    background: '#22c55e',
+    transition: 'width 0.2s ease'
+  },
+  // Uploaded preview
+  uploadedPreview: {
+    display: 'flex',
+    gap: '20px',
+    padding: '16px',
+    background: 'rgba(34, 197, 94, 0.08)',
+    border: '1px solid rgba(34, 197, 94, 0.2)',
+    borderRadius: '12px'
+  },
+  logoPreviewContainer: {
+    width: '100px',
+    height: '100px',
+    background: '#fff',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '8px',
+    flexShrink: 0
+  },
+  logoPreview: {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    objectFit: 'contain'
+  },
+  uploadedDetails: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  fileName: {
+    fontSize: '14px',
+    color: '#e4e4e4',
+    fontWeight: '500'
+  },
+  extractingRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    color: '#3b82f6'
+  },
+  spinner: {
+    width: '14px',
+    height: '14px',
+    border: '2px solid rgba(59, 130, 246, 0.3)',
+    borderTopColor: '#3b82f6',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
+  },
+  extractedColors: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  extractedLabel: {
+    fontSize: '12px',
+    color: '#22c55e'
+  },
+  colorSwatches: {
+    display: 'flex',
+    gap: '8px'
+  },
+  colorSwatch: {
+    width: '50px',
+    height: '40px',
+    borderRadius: '6px',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    padding: '4px',
+    border: '2px solid rgba(255,255,255,0.2)'
+  },
+  colorLabel: {
+    fontSize: '9px',
+    color: '#fff',
+    textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+    fontWeight: '600'
+  },
+  removeButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    background: 'rgba(239, 68, 68, 0.1)',
+    border: '1px solid rgba(239, 68, 68, 0.2)',
+    borderRadius: '6px',
+    color: '#ef4444',
+    fontSize: '13px',
+    cursor: 'pointer',
+    marginTop: '8px',
+    width: 'fit-content'
+  },
+  // Photo grid
+  photoGridContainer: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, 1fr)',
+    gap: '12px'
+  },
+  photoItem: {
+    position: 'relative',
+    aspectRatio: '1',
+    borderRadius: '10px',
+    overflow: 'hidden',
+    background: '#1a1a2e'
+  },
+  photoThumb: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover'
+  },
+  photoOverlay: {
+    position: 'absolute',
+    inset: 0,
+    background: 'rgba(0,0,0,0)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'background 0.2s',
+    ':hover': {
+      background: 'rgba(0,0,0,0.5)'
+    }
+  },
+  photoRemove: {
+    position: 'absolute',
+    top: '6px',
+    right: '6px',
+    width: '24px',
+    height: '24px',
+    background: 'rgba(0,0,0,0.7)',
+    border: 'none',
+    borderRadius: '6px',
+    color: '#fff',
+    fontSize: '12px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.7,
+    transition: 'opacity 0.2s'
+  },
+  photoNumber: {
+    position: 'absolute',
+    bottom: '6px',
+    left: '6px',
+    width: '20px',
+    height: '20px',
+    background: 'rgba(0,0,0,0.7)',
+    borderRadius: '4px',
+    color: '#fff',
+    fontSize: '11px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  photoAddZone: {
+    aspectRatio: '1',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '4px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '2px dashed rgba(255,255,255,0.15)',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    color: '#888',
+    transition: 'all 0.2s ease'
+  },
+  photoAddZoneActive: {
+    borderColor: '#22c55e',
+    background: 'rgba(34, 197, 94, 0.1)',
+    color: '#22c55e'
+  },
+  photoAddIcon: {
+    fontSize: '28px'
+  },
+  photoAddText: {
+    fontSize: '11px'
+  },
+  photoCount: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: '12px',
+    fontSize: '13px',
+    color: '#888'
+  },
+  clearAllBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#ef4444',
+    fontSize: '12px',
+    cursor: 'pointer',
+    padding: '4px 8px'
+  },
+  // AI Generator
+  aiGeneratorSection: {
+    marginTop: '16px'
+  },
+  aiGeneratorBtn: {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    padding: '12px',
+    background: 'rgba(139, 92, 246, 0.1)',
+    border: '1px solid rgba(139, 92, 246, 0.2)',
+    borderRadius: '8px',
+    color: '#a78bfa',
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  aiGeneratorPanel: {
+    marginTop: '12px',
+    padding: '16px',
+    background: 'rgba(139, 92, 246, 0.05)',
+    borderRadius: '8px'
+  },
+  aiGeneratorDesc: {
+    fontSize: '13px',
+    color: '#888',
+    marginBottom: '12px',
+    lineHeight: '1.5'
+  },
+  generateBtn: {
+    width: '100%',
+    padding: '10px',
+    background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+    border: 'none',
+    borderRadius: '8px',
+    color: '#fff',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer'
+  },
+  // Menu section
+  menuDropzoneRow: {
+    display: 'flex',
+    gap: '20px',
+    alignItems: 'stretch'
+  },
+  menuDropzone: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    padding: '24px',
+    background: 'rgba(0,0,0,0.2)',
+    border: '2px dashed rgba(255,255,255,0.15)',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  menuDropzoneIcon: {
+    fontSize: '32px'
+  },
+  menuDropzoneText: {
+    fontSize: '14px',
+    color: '#e4e4e4'
+  },
+  menuExamples: {
+    flex: 1,
+    padding: '16px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: '8px'
+  },
+  menuExamplesTitle: {
+    fontSize: '13px',
+    color: '#888',
+    marginBottom: '8px',
+    display: 'block'
+  },
+  menuExamplesList: {
+    listStyle: 'none',
+    padding: 0,
+    margin: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    fontSize: '13px',
+    color: '#666'
+  },
+  menuUploaded: {
+    display: 'flex',
+    gap: '20px',
+    padding: '16px',
+    background: 'rgba(34, 197, 94, 0.08)',
+    border: '1px solid rgba(34, 197, 94, 0.2)',
+    borderRadius: '12px'
+  },
+  menuPreviewLarge: {
+    width: '120px',
+    height: '120px',
+    background: '#fff',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    flexShrink: 0
+  },
+  menuImage: {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    objectFit: 'contain'
+  },
+  pdfPreview: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    color: '#666'
+  },
+  pdfIcon: {
+    fontSize: '36px'
+  },
+  menuDetails: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px'
+  },
+  menuType: {
+    fontSize: '12px',
+    color: '#888',
+    background: 'rgba(255,255,255,0.1)',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    width: 'fit-content'
+  },
+  menuHint: {
+    fontSize: '13px',
+    color: '#22c55e',
+    margin: '8px 0'
+  },
+  // Style chips
+  styleChips: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginBottom: '12px'
+  },
+  styleChip: {
+    padding: '6px 14px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '20px',
+    color: '#888',
+    fontSize: '13px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  styleChipActive: {
+    background: 'rgba(34, 197, 94, 0.15)',
+    borderColor: '#22c55e',
+    color: '#22c55e'
+  },
+  styleTextarea: {
+    width: '100%',
+    padding: '14px 16px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '10px',
+    color: '#fff',
+    fontSize: '14px',
+    outline: 'none',
+    resize: 'vertical',
+    fontFamily: 'inherit',
+    lineHeight: '1.5'
+  },
+  // Detection banner
+  detectionBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    padding: '16px 20px',
+    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(34, 197, 94, 0.15))',
+    border: '1px solid rgba(139, 92, 246, 0.3)',
+    borderRadius: '12px',
+    marginBottom: '24px'
+  },
+  detectionIcon: {
+    fontSize: '24px'
+  },
+  detectionContent: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    fontSize: '14px',
+    color: '#e4e4e4'
+  },
+  detectedStyle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#a78bfa'
+  },
+  changeStyleBtn: {
+    padding: '6px 16px',
+    background: 'rgba(255,255,255,0.1)',
+    border: 'none',
+    borderRadius: '6px',
+    color: '#fff',
+    fontSize: '13px',
+    cursor: 'pointer'
+  },
+  // Asset summary
+  assetSummary: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '16px 20px',
+    background: 'rgba(34, 197, 94, 0.1)',
+    border: '1px solid rgba(34, 197, 94, 0.2)',
+    borderRadius: '10px',
+    marginTop: '24px'
+  },
+  summaryIcon: {
+    fontSize: '20px'
+  },
+  summaryText: {
+    fontSize: '14px',
+    color: '#22c55e'
+  },
+  // Actions
+  actions: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: '32px',
+    gap: '16px'
+  },
+  skipButton: {
+    padding: '12px 24px',
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.15)',
+    borderRadius: '10px',
+    color: '#888',
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  continueButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '14px 32px',
+    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+    border: 'none',
+    borderRadius: '10px',
+    color: '#fff',
+    fontSize: '16px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  buttonSpinner: {
+    width: '16px',
+    height: '16px',
+    border: '2px solid rgba(255,255,255,0.3)',
+    borderTopColor: '#fff',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
+  }
+};
 
 // ============================================
 // REFERENCE PATH: Show Sites You Like
@@ -3370,262 +5440,6 @@ function IndustryBanner({ industry, industryKey, onChangeClick, industries }) {
 // LAYOUT STYLE SELECTOR - Visual Layout Previews
 // ============================================
 
-// Industry-specific layout options
-const LAYOUT_OPTIONS = {
-  // Restaurant / Food industry layouts
-  restaurant: [
-    {
-      id: 'menu-hero',
-      name: 'Menu Hero',
-      description: 'Large hero image with menu focus',
-      preview: { heroStyle: 'full', menuPosition: 'center', ctaStyle: 'overlay' }
-    },
-    {
-      id: 'gallery-first',
-      name: 'Gallery First',
-      description: 'Photo gallery showcases your dishes',
-      preview: { heroStyle: 'split', menuPosition: 'side', ctaStyle: 'button' }
-    },
-    {
-      id: 'reservation-focus',
-      name: 'Reservation Focus',
-      description: 'Booking widget front and center',
-      preview: { heroStyle: 'minimal', menuPosition: 'below', ctaStyle: 'prominent' }
-    }
-  ],
-  cafe: [
-    {
-      id: 'cozy-vibe',
-      name: 'Cozy Vibe',
-      description: 'Warm, inviting atmosphere feel',
-      preview: { heroStyle: 'full', menuPosition: 'center', ctaStyle: 'overlay' }
-    },
-    {
-      id: 'menu-board',
-      name: 'Menu Board',
-      description: 'Classic coffee shop menu style',
-      preview: { heroStyle: 'split', menuPosition: 'side', ctaStyle: 'button' }
-    },
-    {
-      id: 'location-centric',
-      name: 'Location Centric',
-      description: 'Map and hours prominently displayed',
-      preview: { heroStyle: 'minimal', menuPosition: 'below', ctaStyle: 'prominent' }
-    }
-  ],
-  // Professional services layouts
-  'law-firm': [
-    {
-      id: 'trust-authority',
-      name: 'Trust & Authority',
-      description: 'Professional credibility focus',
-      preview: { heroStyle: 'corporate', contentStyle: 'formal', ctaStyle: 'subtle' }
-    },
-    {
-      id: 'case-results',
-      name: 'Case Results',
-      description: 'Showcase wins and testimonials',
-      preview: { heroStyle: 'split', contentStyle: 'results', ctaStyle: 'consultation' }
-    },
-    {
-      id: 'practice-areas',
-      name: 'Practice Areas',
-      description: 'Services organized by specialty',
-      preview: { heroStyle: 'minimal', contentStyle: 'services', ctaStyle: 'prominent' }
-    }
-  ],
-  dental: [
-    {
-      id: 'patient-comfort',
-      name: 'Patient Comfort',
-      description: 'Friendly, welcoming atmosphere',
-      preview: { heroStyle: 'warm', contentStyle: 'caring', ctaStyle: 'booking' }
-    },
-    {
-      id: 'services-grid',
-      name: 'Services Grid',
-      description: 'All treatments clearly displayed',
-      preview: { heroStyle: 'clean', contentStyle: 'services', ctaStyle: 'prominent' }
-    },
-    {
-      id: 'team-focused',
-      name: 'Team Focused',
-      description: 'Meet your dental professionals',
-      preview: { heroStyle: 'team', contentStyle: 'personal', ctaStyle: 'consultation' }
-    }
-  ],
-  healthcare: [
-    {
-      id: 'patient-first',
-      name: 'Patient First',
-      description: 'Compassionate care messaging',
-      preview: { heroStyle: 'warm', contentStyle: 'caring', ctaStyle: 'booking' }
-    },
-    {
-      id: 'services-focus',
-      name: 'Services Focus',
-      description: 'Medical services highlighted',
-      preview: { heroStyle: 'clean', contentStyle: 'services', ctaStyle: 'prominent' }
-    },
-    {
-      id: 'credentials',
-      name: 'Credentials',
-      description: 'Expertise and qualifications',
-      preview: { heroStyle: 'professional', contentStyle: 'trust', ctaStyle: 'consultation' }
-    }
-  ],
-  // Fitness & Wellness layouts
-  fitness: [
-    {
-      id: 'energy-pump',
-      name: 'Energy Pump',
-      description: 'Bold, motivational design',
-      preview: { heroStyle: 'dynamic', contentStyle: 'energetic', ctaStyle: 'action' }
-    },
-    {
-      id: 'class-schedule',
-      name: 'Class Schedule',
-      description: 'Schedule front and center',
-      preview: { heroStyle: 'clean', contentStyle: 'schedule', ctaStyle: 'booking' }
-    },
-    {
-      id: 'transformation',
-      name: 'Transformation',
-      description: 'Before/after results focus',
-      preview: { heroStyle: 'results', contentStyle: 'testimonials', ctaStyle: 'trial' }
-    }
-  ],
-  yoga: [
-    {
-      id: 'zen-minimal',
-      name: 'Zen Minimal',
-      description: 'Clean, peaceful aesthetic',
-      preview: { heroStyle: 'calm', contentStyle: 'minimal', ctaStyle: 'gentle' }
-    },
-    {
-      id: 'class-calendar',
-      name: 'Class Calendar',
-      description: 'Easy class booking',
-      preview: { heroStyle: 'serene', contentStyle: 'schedule', ctaStyle: 'booking' }
-    },
-    {
-      id: 'instructor-led',
-      name: 'Instructor Led',
-      description: 'Personal connection focus',
-      preview: { heroStyle: 'personal', contentStyle: 'team', ctaStyle: 'consultation' }
-    }
-  ],
-  'spa-salon': [
-    {
-      id: 'luxury-feel',
-      name: 'Luxury Feel',
-      description: 'Premium spa experience',
-      preview: { heroStyle: 'elegant', contentStyle: 'luxury', ctaStyle: 'booking' }
-    },
-    {
-      id: 'service-menu',
-      name: 'Service Menu',
-      description: 'Treatments with pricing',
-      preview: { heroStyle: 'clean', contentStyle: 'menu', ctaStyle: 'prominent' }
-    },
-    {
-      id: 'gallery-showcase',
-      name: 'Gallery Showcase',
-      description: 'Visual portfolio of work',
-      preview: { heroStyle: 'gallery', contentStyle: 'portfolio', ctaStyle: 'booking' }
-    }
-  ],
-  // Real Estate layouts
-  'real-estate': [
-    {
-      id: 'property-search',
-      name: 'Property Search',
-      description: 'Search-focused homepage',
-      preview: { heroStyle: 'search', contentStyle: 'listings', ctaStyle: 'search' }
-    },
-    {
-      id: 'agent-brand',
-      name: 'Agent Brand',
-      description: 'Personal agent branding',
-      preview: { heroStyle: 'personal', contentStyle: 'trust', ctaStyle: 'contact' }
-    },
-    {
-      id: 'featured-listings',
-      name: 'Featured Listings',
-      description: 'Showcase top properties',
-      preview: { heroStyle: 'gallery', contentStyle: 'featured', ctaStyle: 'browse' }
-    }
-  ],
-  // Construction / Trade layouts
-  construction: [
-    {
-      id: 'project-showcase',
-      name: 'Project Showcase',
-      description: 'Portfolio of completed work',
-      preview: { heroStyle: 'portfolio', contentStyle: 'projects', ctaStyle: 'quote' }
-    },
-    {
-      id: 'services-list',
-      name: 'Services List',
-      description: 'Clear service offerings',
-      preview: { heroStyle: 'professional', contentStyle: 'services', ctaStyle: 'estimate' }
-    },
-    {
-      id: 'trust-builder',
-      name: 'Trust Builder',
-      description: 'Certifications and reviews',
-      preview: { heroStyle: 'credibility', contentStyle: 'trust', ctaStyle: 'contact' }
-    }
-  ],
-  // SaaS / Tech layouts
-  saas: [
-    {
-      id: 'product-hero',
-      name: 'Product Hero',
-      description: 'Product screenshot focus',
-      preview: { heroStyle: 'product', contentStyle: 'features', ctaStyle: 'signup' }
-    },
-    {
-      id: 'feature-grid',
-      name: 'Feature Grid',
-      description: 'Benefits and features',
-      preview: { heroStyle: 'clean', contentStyle: 'benefits', ctaStyle: 'trial' }
-    },
-    {
-      id: 'social-proof',
-      name: 'Social Proof',
-      description: 'Logos and testimonials',
-      preview: { heroStyle: 'minimal', contentStyle: 'trust', ctaStyle: 'demo' }
-    }
-  ],
-  // Default layouts for any industry
-  default: [
-    {
-      id: 'classic-hero',
-      name: 'Classic Hero',
-      description: 'Traditional hero with CTA',
-      preview: { heroStyle: 'standard', contentStyle: 'balanced', ctaStyle: 'prominent' }
-    },
-    {
-      id: 'services-first',
-      name: 'Services First',
-      description: 'Lead with what you offer',
-      preview: { heroStyle: 'minimal', contentStyle: 'services', ctaStyle: 'contact' }
-    },
-    {
-      id: 'story-driven',
-      name: 'Story Driven',
-      description: 'About us prominence',
-      preview: { heroStyle: 'narrative', contentStyle: 'story', ctaStyle: 'learn' }
-    }
-  ]
-};
-
-// Get layouts for a specific industry or default
-const getLayoutsForIndustry = (industryKey) => {
-  return LAYOUT_OPTIONS[industryKey] || LAYOUT_OPTIONS.default;
-};
-
 // Layout Style Selector Component with Visual Previews
 function LayoutStyleSelector({ industryKey, selectedLayout, onSelectLayout, colors }) {
   const layouts = getLayoutsForIndustry(industryKey);
@@ -3776,7 +5590,7 @@ function LayoutThumbnail({ layout, colors, isSelected }) {
   );
 }
 
-// Styles for Layout Selector
+// Styles for Layout Selector - Prominent visual thumbnails
 const layoutSelectorStyles = {
   container: {
     width: '100%'
@@ -3784,116 +5598,119 @@ const layoutSelectorStyles = {
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '16px'
+    gap: '20px'
   },
   card: {
     position: 'relative',
-    padding: '12px',
-    background: 'rgba(255,255,255,0.02)',
-    border: '2px solid rgba(255,255,255,0.1)',
-    borderRadius: '12px',
+    padding: '16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '2px solid rgba(255,255,255,0.12)',
+    borderRadius: '14px',
     cursor: 'pointer',
     transition: 'all 0.2s ease',
     textAlign: 'left'
   },
   cardActive: {
     borderColor: '#22c55e',
-    background: 'rgba(34, 197, 94, 0.1)'
+    background: 'rgba(34, 197, 94, 0.12)',
+    boxShadow: '0 0 20px rgba(34, 197, 94, 0.2)'
   },
   thumbnailContainer: {
-    marginBottom: '12px',
-    borderRadius: '8px',
-    overflow: 'hidden'
+    marginBottom: '14px',
+    borderRadius: '10px',
+    overflow: 'hidden',
+    border: '1px solid rgba(255,255,255,0.08)'
   },
   info: {
     padding: '0 4px'
   },
   name: {
-    fontSize: '14px',
+    fontSize: '15px',
     fontWeight: '600',
     color: '#fff',
-    marginBottom: '4px'
+    marginBottom: '6px'
   },
   description: {
-    fontSize: '11px',
-    color: '#888',
-    lineHeight: '1.3'
+    fontSize: '12px',
+    color: '#999',
+    lineHeight: '1.4'
   },
   checkmark: {
     position: 'absolute',
-    top: '8px',
-    right: '8px',
-    width: '20px',
-    height: '20px',
+    top: '10px',
+    right: '10px',
+    width: '24px',
+    height: '24px',
     borderRadius: '50%',
     background: '#22c55e',
     color: '#fff',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '12px',
-    fontWeight: 'bold'
+    fontSize: '14px',
+    fontWeight: 'bold',
+    boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)'
   }
 };
 
-// Styles for Layout Thumbnails (mini previews)
+// Styles for Layout Thumbnails (mini previews) - Made larger for prominence
 const layoutThumbnailStyles = {
   container: {
     width: '100%',
-    height: '80px',
+    height: '100px',
     background: '#1a1a2e',
-    borderRadius: '6px',
+    borderRadius: '8px',
     overflow: 'hidden',
     border: '1px solid rgba(255,255,255,0.1)'
   },
   containerSelected: {
     boxShadow: '0 0 0 2px rgba(34, 197, 94, 0.3)'
   },
-  // Hero styles
+  // Hero styles - scaled up
   heroFull: {
-    height: '45px',
+    height: '55px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '4px'
+    gap: '5px'
   },
   heroSplit: {
-    height: '45px',
+    height: '55px',
     display: 'flex'
   },
   heroSplitLeft: {
     flex: 1,
-    padding: '8px',
+    padding: '10px',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
-    gap: '4px'
+    gap: '5px'
   },
   heroSplitRight: {
     width: '40%'
   },
   heroMinimal: {
-    height: '45px',
-    padding: '6px 8px',
+    height: '55px',
+    padding: '8px 10px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '4px'
+    gap: '5px'
   },
   heroGallery: {
-    height: '45px',
+    height: '55px',
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '2px',
-    padding: '4px'
+    gap: '3px',
+    padding: '5px'
   },
   navBar: {
-    height: '8px',
-    borderRadius: '2px'
+    height: '10px',
+    borderRadius: '3px'
   },
   heroText: {
     width: '60%',
-    height: '6px',
+    height: '7px',
     background: 'rgba(255,255,255,0.9)',
     borderRadius: '2px'
   },
@@ -3905,28 +5722,28 @@ const layoutThumbnailStyles = {
   },
   heroCta: {
     width: '35%',
-    height: '6px',
+    height: '7px',
     background: 'rgba(255,255,255,0.3)',
     borderRadius: '2px'
   },
   galleryItem: {
-    borderRadius: '2px'
+    borderRadius: '3px'
   },
-  // Content styles
+  // Content styles - scaled up
   contentGrid: {
-    height: '35px',
+    height: '45px',
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '4px',
-    padding: '6px'
+    gap: '5px',
+    padding: '8px'
   },
   contentCard: {
     background: 'rgba(255,255,255,0.05)',
-    borderRadius: '3px'
+    borderRadius: '4px'
   },
   contentTestimonials: {
-    height: '35px',
-    padding: '6px',
+    height: '45px',
+    padding: '8px',
     display: 'flex',
     justifyContent: 'center'
   },
@@ -4510,15 +6327,16 @@ const wizardStyles = {
 
 const collapsibleStyles = {
   container: {
-    marginBottom: '16px',
+    // No marginBottom - let the parent grid/flex gap handle spacing
     background: 'rgba(255,255,255,0.02)',
-    borderRadius: '12px',
+    borderRadius: '14px',
     border: '1px solid rgba(255,255,255,0.08)',
-    overflow: 'hidden'
+    overflow: 'hidden',
+    transition: 'border-color 0.2s ease'
   },
   header: {
     width: '100%',
-    padding: '16px 20px',
+    padding: '18px 24px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -4533,19 +6351,20 @@ const collapsibleStyles = {
     gap: '12px'
   },
   icon: {
-    fontSize: '18px'
+    fontSize: '20px'
   },
   title: {
-    fontSize: '15px',
+    fontSize: '16px',
     fontWeight: '600',
     color: '#fff'
   },
   badge: {
-    padding: '3px 10px',
+    padding: '4px 12px',
     background: 'rgba(34, 197, 94, 0.15)',
     borderRadius: '12px',
-    fontSize: '11px',
-    color: '#22c55e'
+    fontSize: '12px',
+    color: '#22c55e',
+    fontWeight: '500'
   },
   tooltipTrigger: {
     fontSize: '14px',
@@ -4559,7 +6378,7 @@ const collapsibleStyles = {
     transition: 'transform 0.2s ease'
   },
   content: {
-    padding: '0 20px 20px 20px'
+    padding: '4px 24px 24px 24px'
   }
 };
 
@@ -4704,6 +6523,13 @@ const industryBannerStyles = {
 // CUSTOMIZE STEP: The WordPress-Style Editor
 // ============================================
 function CustomizeStep({ projectData, updateProject, industries, layouts, effects, onGenerate, onBack }) {
+  // Responsive layout detection
+  const { width } = useWindowSize();
+  const layoutMode = getLayoutMode(width);
+  const isLargeScreen = layoutMode === 'desktop' || layoutMode === 'largeDesktop';
+  const isMobile = layoutMode === 'mobile';
+  const isTablet = layoutMode === 'tablet';
+
   // Section collapse state
   const [showIndustryPicker, setShowIndustryPicker] = useState(false);
 
@@ -4715,6 +6541,290 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
     { name: 'Royal', colors: { primary: '#8b5cf6', secondary: '#6d28d9', accent: '#c4b5fd' } },
     { name: 'Crimson', colors: { primary: '#ef4444', secondary: '#b91c1c', accent: '#fca5a5' } },
     { name: 'Midnight', colors: { primary: '#1e3a5f', secondary: '#0f172a', accent: '#c9a962' } },
+  ];
+
+  // ==========================================
+  // INDUSTRY-SPECIFIC PLACEHOLDERS
+  // ==========================================
+  const industryPlaceholders = {
+    tattoo: {
+      businessName: 'e.g., Midnight Ink Studio',
+      tagline: "e.g., Your story, our art. Custom tattoos since 2015",
+      location: 'e.g., Austin, TX'
+    },
+    barbershop: {
+      businessName: 'e.g., Classic Cuts Barbershop',
+      tagline: 'e.g., Where gentlemen get groomed',
+      location: 'e.g., Brooklyn, NY'
+    },
+    restaurant: {
+      businessName: "e.g., Mario's Pizzeria",
+      tagline: 'e.g., Authentic Brooklyn-style pizza since 1985',
+      location: 'e.g., New York, NY'
+    },
+    pizza: {
+      businessName: "e.g., Tony's Famous Pizza",
+      tagline: 'e.g., Real New York pizza, made with love',
+      location: 'e.g., Chicago, IL'
+    },
+    dental: {
+      businessName: 'e.g., Bright Smile Family Dentistry',
+      tagline: 'e.g., Gentle care for the whole family',
+      location: 'e.g., Los Angeles, CA'
+    },
+    law: {
+      businessName: 'e.g., Smith & Associates',
+      tagline: 'e.g., Fighting for your rights since 1995',
+      location: 'e.g., Miami, FL'
+    },
+    fitness: {
+      businessName: 'e.g., Iron Forge Fitness',
+      tagline: 'e.g., Transform your body, transform your life',
+      location: 'e.g., Denver, CO'
+    },
+    spa: {
+      businessName: 'e.g., Serenity Day Spa',
+      tagline: 'e.g., Your escape from the everyday',
+      location: 'e.g., Scottsdale, AZ'
+    },
+    auto: {
+      businessName: "e.g., Mike's Auto Repair",
+      tagline: 'e.g., Honest work at honest prices since 1990',
+      location: 'e.g., Houston, TX'
+    },
+    default: {
+      businessName: 'e.g., Your Business Name',
+      tagline: 'e.g., A short phrase that captures what makes you special',
+      location: 'e.g., San Francisco, CA'
+    }
+  };
+
+  // ==========================================
+  // SMART DEFAULTS BY INDUSTRY
+  // ==========================================
+  const industryDefaults = {
+    tattoo: {
+      targetAudience: ['individuals', 'professionals'],
+      primaryCTA: 'book',
+      teamSize: 'small',
+      priceRange: 'premium',
+      yearsEstablished: 'established',
+      tone: 40 // More edgy/professional
+    },
+    barbershop: {
+      targetAudience: ['individuals'],
+      primaryCTA: 'book',
+      teamSize: 'small',
+      priceRange: 'mid',
+      yearsEstablished: 'established',
+      tone: 60 // Friendly but professional
+    },
+    restaurant: {
+      targetAudience: ['individuals', 'families'],
+      primaryCTA: 'book',
+      teamSize: 'medium',
+      priceRange: 'mid',
+      yearsEstablished: 'established',
+      tone: 70 // Warm and welcoming
+    },
+    pizza: {
+      targetAudience: ['individuals', 'families'],
+      primaryCTA: 'buy', // Order online
+      teamSize: 'small',
+      priceRange: 'budget',
+      yearsEstablished: 'established',
+      tone: 80 // Very friendly
+    },
+    dental: {
+      targetAudience: ['individuals', 'families'],
+      primaryCTA: 'book',
+      teamSize: 'medium',
+      priceRange: 'mid',
+      yearsEstablished: 'established',
+      tone: 50 // Balanced
+    },
+    law: {
+      targetAudience: ['individuals', 'small-business'],
+      primaryCTA: 'contact',
+      teamSize: 'small',
+      priceRange: 'premium',
+      yearsEstablished: 'veteran',
+      tone: 25 // Very professional
+    },
+    fitness: {
+      targetAudience: ['individuals', 'professionals'],
+      primaryCTA: 'book',
+      teamSize: 'medium',
+      priceRange: 'mid',
+      yearsEstablished: 'growing',
+      tone: 75 // Motivating and friendly
+    },
+    spa: {
+      targetAudience: ['individuals', 'professionals'],
+      primaryCTA: 'book',
+      teamSize: 'small',
+      priceRange: 'premium',
+      yearsEstablished: 'established',
+      tone: 55 // Calm and welcoming
+    },
+    auto: {
+      targetAudience: ['individuals', 'families'],
+      primaryCTA: 'call',
+      teamSize: 'small',
+      priceRange: 'mid',
+      yearsEstablished: 'veteran',
+      tone: 60 // Trustworthy and friendly
+    }
+  };
+
+  // Get placeholders based on current industry
+  const getPlaceholder = (field) => {
+    const industryKey = projectData.industryKey?.toLowerCase() || '';
+    for (const [key, placeholders] of Object.entries(industryPlaceholders)) {
+      if (industryKey.includes(key)) {
+        return placeholders[field] || industryPlaceholders.default[field];
+      }
+    }
+    return industryPlaceholders.default[field];
+  };
+
+  // Apply smart defaults when industry changes
+  const applyIndustryDefaults = (industryKey) => {
+    const key = industryKey?.toLowerCase() || '';
+    let defaults = null;
+
+    for (const [indKey, indDefaults] of Object.entries(industryDefaults)) {
+      if (key.includes(indKey)) {
+        defaults = indDefaults;
+        break;
+      }
+    }
+
+    if (defaults) {
+      updateProject({
+        targetAudience: defaults.targetAudience,
+        primaryCTA: defaults.primaryCTA,
+        teamSize: defaults.teamSize,
+        priceRange: defaults.priceRange,
+        yearsEstablished: defaults.yearsEstablished,
+        tone: defaults.tone
+      });
+    }
+  };
+
+  // ==========================================
+  // BUSINESS NAME INTELLIGENCE
+  // ==========================================
+  const inferFromBusinessName = (name) => {
+    if (!name || name.length < 3) return null;
+
+    const lowerName = name.toLowerCase();
+    const inferences = { location: null, style: null, industry: null };
+
+    // Location detection
+    const cities = {
+      'brooklyn': 'Brooklyn, NY',
+      'manhattan': 'Manhattan, NY',
+      'austin': 'Austin, TX',
+      'dallas': 'Dallas, TX',
+      'houston': 'Houston, TX',
+      'miami': 'Miami, FL',
+      'chicago': 'Chicago, IL',
+      'seattle': 'Seattle, WA',
+      'denver': 'Denver, CO',
+      'phoenix': 'Phoenix, AZ',
+      'la': 'Los Angeles, CA',
+      'sf': 'San Francisco, CA',
+      'boston': 'Boston, MA',
+      'atlanta': 'Atlanta, GA',
+      'philly': 'Philadelphia, PA'
+    };
+
+    for (const [cityKey, cityName] of Object.entries(cities)) {
+      if (lowerName.includes(cityKey)) {
+        inferences.location = cityName;
+        break;
+      }
+    }
+
+    // Style/vibe detection
+    if (lowerName.includes("'s ") || lowerName.includes("mama") || lowerName.includes("papa") || lowerName.includes("uncle") || lowerName.includes("auntie")) {
+      inferences.style = 'Family-owned vibe';
+    } else if (lowerName.includes('elite') || lowerName.includes('premium') || lowerName.includes('luxury') || lowerName.includes('exclusive')) {
+      inferences.style = 'Luxury/Premium';
+    } else if (lowerName.includes('& associates') || lowerName.includes('& partners') || lowerName.includes('group') || lowerName.includes('llc')) {
+      inferences.style = 'Professional/Corporate';
+    } else if (lowerName.includes('ink') || lowerName.includes('tattoo') || lowerName.includes('custom')) {
+      inferences.style = 'Creative/Artistic';
+    }
+
+    // Industry hints
+    const industryHints = {
+      'pizza': 'Pizza/Italian',
+      'ink': 'Tattoo Studio',
+      'tattoo': 'Tattoo Studio',
+      'cuts': 'Barbershop',
+      'barber': 'Barbershop',
+      'dental': 'Dental Practice',
+      'smile': 'Dental Practice',
+      'law': 'Law Firm',
+      'legal': 'Law Firm',
+      'attorney': 'Law Firm',
+      'fitness': 'Fitness/Gym',
+      'gym': 'Fitness/Gym',
+      'iron': 'Fitness/Gym',
+      'spa': 'Spa/Wellness',
+      'auto': 'Auto Repair',
+      'motor': 'Auto Repair',
+      'grill': 'Restaurant',
+      'kitchen': 'Restaurant',
+      'cafe': 'Restaurant/Cafe',
+      'bistro': 'Restaurant'
+    };
+
+    for (const [hint, industry] of Object.entries(industryHints)) {
+      if (lowerName.includes(hint)) {
+        inferences.industry = industry;
+        break;
+      }
+    }
+
+    // Only return if we found something
+    if (inferences.location || inferences.style || inferences.industry) {
+      return inferences;
+    }
+    return null;
+  };
+
+  // Update inferences when business name changes
+  const handleBusinessNameChange = (name) => {
+    const inferred = inferFromBusinessName(name);
+    updateProject({
+      businessName: name,
+      inferredDetails: inferred
+    });
+  };
+
+  // High-impact question options
+  const teamSizeOptions = [
+    { id: 'solo', label: 'Just Me', icon: '👤' },
+    { id: 'small', label: '2-4 People', icon: '👥' },
+    { id: 'medium', label: '5-10 People', icon: '👨‍👩‍👧‍👦' },
+    { id: 'large', label: '10+ People', icon: '🏢' }
+  ];
+
+  const priceRangeOptions = [
+    { id: 'budget', label: '$', description: 'Budget-friendly', icon: '💵' },
+    { id: 'mid', label: '$$', description: 'Mid-range', icon: '💰' },
+    { id: 'premium', label: '$$$', description: 'Premium', icon: '💎' },
+    { id: 'luxury', label: '$$$$', description: 'Luxury', icon: '👑' }
+  ];
+
+  const yearsOptions = [
+    { id: 'new', label: 'Just Starting', icon: '🌱' },
+    { id: 'growing', label: '1-5 Years', icon: '📈' },
+    { id: 'established', label: '5-15 Years', icon: '🏆' },
+    { id: 'veteran', label: '15+ Years', icon: '⭐' }
   ];
   
   const pageOptions = [
@@ -4766,12 +6876,67 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
   // Completed steps for breadcrumb
   const completedSteps = ['choose-path', 'path', 'upload-assets'];
 
+  // Responsive styles based on screen size
+  const responsiveStyles = {
+    container: {
+      width: '100%',
+      maxWidth: layoutMode === 'largeDesktop' ? '1920px' :
+                layoutMode === 'desktop' ? '1600px' :
+                layoutMode === 'tablet' ? '100%' : '100%',
+      padding: isMobile ? '16px' : isTablet ? '24px' : '40px',
+      margin: '0 auto'
+    },
+    grid: {
+      display: isMobile ? 'flex' : 'grid',
+      flexDirection: isMobile ? 'column' : undefined,
+      // Larger preview column on desktop
+      gridTemplateColumns: isMobile ? '1fr' :
+                          isTablet ? '1fr' :
+                          layoutMode === 'desktop' ? '1fr 480px' :
+                          '1fr 550px',
+      gap: isMobile ? '20px' : isTablet ? '28px' : '40px',
+      marginBottom: '32px',
+      alignItems: 'start'
+    },
+    formContainer: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: isMobile ? '16px' : '20px'
+    },
+    // On large screens, show some sections side by side
+    sectionsGrid: {
+      display: isLargeScreen ? 'grid' : 'flex',
+      gridTemplateColumns: isLargeScreen ? 'repeat(2, 1fr)' : undefined,
+      flexDirection: isLargeScreen ? undefined : 'column',
+      gap: isMobile ? '16px' : '20px'
+    },
+    // Full-width sections (like pages, layout style)
+    fullWidthSection: {
+      gridColumn: isLargeScreen ? 'span 2' : undefined
+    },
+    preview: {
+      position: isMobile ? 'relative' : 'sticky',
+      top: isMobile ? 'auto' : '24px',
+      height: isMobile ? '350px' : 'fit-content',
+      maxHeight: isMobile ? '350px' :
+                 isTablet ? '500px' :
+                 layoutMode === 'desktop' ? '600px' : '700px',
+      minHeight: isMobile ? '300px' : '400px'
+    }
+  };
+
   return (
-    <div style={styles.customizeContainer}>
+    <div style={{...styles.customizeContainer, ...responsiveStyles.container}}>
       <button style={styles.backBtn} onClick={onBack}>← Back</button>
 
-      <h1 style={styles.customizeTitle}>✨ Customize Your Site</h1>
-      <p style={p1Styles.subtitle}>Configure every detail of your professional website</p>
+      <h1 style={{
+        ...styles.customizeTitle,
+        fontSize: isMobile ? '22px' : isTablet ? '26px' : '28px'
+      }}>✨ Customize Your Site</h1>
+      <p style={{
+        ...p1Styles.subtitle,
+        marginBottom: isMobile ? '16px' : '24px'
+      }}>Configure every detail of your professional website</p>
 
       {/* Industry Detection Banner */}
       {projectData.industry && (
@@ -4804,6 +6969,8 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
                       layoutKey: null,
                       effects: ind?.effects || []
                     });
+                    // Apply smart defaults for this industry
+                    applyIndustryDefaults(key);
                     setShowIndustryPicker(false);
                   }}
                 >
@@ -4819,18 +6986,21 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
         </div>
       )}
 
-      <div style={styles.customizeGrid}>
+      <div style={{...styles.customizeGrid, ...responsiveStyles.grid}}>
         {/* LEFT: Form Controls - Now with Collapsible Sections */}
-        <div style={styles.customizeForm}>
+        <div style={{...styles.customizeForm, maxWidth: isMobile ? '100%' : 'none'}}>
 
-          {/* SECTION 1: Business Identity */}
+          {/* Responsive Grid for Smaller Sections */}
+          <div style={responsiveStyles.sectionsGrid}>
+
+          {/* SECTION 1: Business Identity - Always Visible */}
           <CollapsibleSection
             title="Business Identity"
             icon="🏢"
             defaultOpen={true}
             tooltip="Basic information about your business"
           >
-            {/* Business Name */}
+            {/* Business Name with Intelligence */}
             <div style={styles.formSection}>
               <label style={styles.formLabel}>
                 Business Name *
@@ -4839,46 +7009,152 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
               <input
                 type="text"
                 value={projectData.businessName}
-                onChange={(e) => updateProject({ businessName: e.target.value })}
-                placeholder="Your Business Name"
+                onChange={(e) => handleBusinessNameChange(e.target.value)}
+                placeholder={getPlaceholder('businessName')}
                 style={styles.formInput}
               />
-            </div>
+              <p style={customizeStyles.fieldHint}>This will appear in your header and throughout your site</p>
 
-            {/* Tagline */}
-            <div style={styles.formSection}>
-              <label style={styles.formLabel}>Tagline</label>
-              <input
-                type="text"
-                value={projectData.tagline}
-                onChange={(e) => updateProject({ tagline: e.target.value })}
-                placeholder="A short description of what you do"
-                style={styles.formInput}
-              />
-              <p style={customizeStyles.fieldHint}>Appears in your hero section and browser title</p>
+              {/* Business Name Intelligence Display */}
+              {projectData.inferredDetails && (
+                <div style={customizeStyles.inferenceBox}>
+                  <span style={customizeStyles.inferenceLabel}>We detected:</span>
+                  <div style={customizeStyles.inferenceChips}>
+                    {projectData.inferredDetails.location && (
+                      <span style={customizeStyles.inferenceChip}>📍 {projectData.inferredDetails.location}</span>
+                    )}
+                    {projectData.inferredDetails.industry && (
+                      <span style={customizeStyles.inferenceChip}>🏪 {projectData.inferredDetails.industry}</span>
+                    )}
+                    {projectData.inferredDetails.style && (
+                      <span style={customizeStyles.inferenceChip}>✨ {projectData.inferredDetails.style}</span>
+                    )}
+                  </div>
+                  <p style={customizeStyles.inferenceHint}>Click fields below to adjust if we got it wrong</p>
+                </div>
+              )}
             </div>
 
             {/* Location */}
             <div style={styles.formSection}>
-              <label style={styles.formLabel}>Business Location</label>
+              <label style={styles.formLabel}>Business Location *</label>
               <input
                 type="text"
                 value={projectData.location || ''}
                 onChange={(e) => updateProject({ location: e.target.value })}
-                placeholder="e.g., San Francisco, CA or Online Only"
+                placeholder={getPlaceholder('location')}
                 style={styles.formInput}
               />
               <p style={customizeStyles.fieldHint}>Helps AI customize content for your area</p>
             </div>
+
+            {/* Tagline - Optional with "We'll Handle It" */}
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>
+                Tagline
+                <span style={customizeStyles.optionalBadge}>Optional</span>
+              </label>
+              <input
+                type="text"
+                value={projectData.tagline}
+                onChange={(e) => updateProject({ tagline: e.target.value })}
+                placeholder={getPlaceholder('tagline')}
+                style={styles.formInput}
+              />
+              <p style={customizeStyles.fieldHintWithIcon}>
+                <span style={customizeStyles.hintIcon}>💡</span>
+                Skip this and we'll generate a tagline based on your industry
+              </p>
+            </div>
           </CollapsibleSection>
 
-          {/* SECTION 2: Target & Goals */}
+          {/* SECTION: Quick Impact Questions */}
           <CollapsibleSection
-            title="Target Audience & Goals"
-            icon="🎯"
+            title="Quick Details"
+            icon="⚡"
             defaultOpen={true}
-            tooltip="Define who you serve and what action you want them to take"
+            tooltip="3 quick questions that dramatically improve your site"
           >
+            <p style={customizeStyles.sectionIntro}>
+              These quick selections help us generate better content. Takes 10 seconds!
+            </p>
+
+            {/* Team Size */}
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>Team Size</label>
+              <div style={customizeStyles.chipGrid}>
+                {teamSizeOptions.map(option => (
+                  <button
+                    key={option.id}
+                    style={{
+                      ...customizeStyles.impactChip,
+                      ...(projectData.teamSize === option.id ? customizeStyles.impactChipActive : {})
+                    }}
+                    onClick={() => updateProject({ teamSize: option.id })}
+                  >
+                    <span style={customizeStyles.impactChipIcon}>{option.icon}</span>
+                    <span>{option.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Price Range */}
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>Price Range</label>
+              <div style={customizeStyles.chipGrid}>
+                {priceRangeOptions.map(option => (
+                  <button
+                    key={option.id}
+                    style={{
+                      ...customizeStyles.impactChip,
+                      ...(projectData.priceRange === option.id ? customizeStyles.impactChipActive : {})
+                    }}
+                    onClick={() => updateProject({ priceRange: option.id })}
+                  >
+                    <span style={customizeStyles.impactChipIcon}>{option.icon}</span>
+                    <span>{option.label}</span>
+                    {option.description && <span style={customizeStyles.impactChipDesc}>{option.description}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Years Established */}
+            <div style={styles.formSection}>
+              <label style={styles.formLabel}>How Established?</label>
+              <div style={customizeStyles.chipGrid}>
+                {yearsOptions.map(option => (
+                  <button
+                    key={option.id}
+                    style={{
+                      ...customizeStyles.impactChip,
+                      ...(projectData.yearsEstablished === option.id ? customizeStyles.impactChipActive : {})
+                    }}
+                    onClick={() => updateProject({ yearsEstablished: option.id })}
+                  >
+                    <span style={customizeStyles.impactChipIcon}>{option.icon}</span>
+                    <span>{option.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          {/* SECTION 2: Target & Goals - Collapsed by default */}
+          <CollapsibleSection
+            title="Customize More"
+            icon="✨"
+            defaultOpen={false}
+            tooltip="Optional - we'll use smart defaults if you skip"
+            badge={projectData.targetAudience?.length > 0 ? `${projectData.targetAudience.length} selected` : 'Auto'}
+          >
+            <p style={customizeStyles.sectionIntro}>
+              <span style={customizeStyles.hintIcon}>💡</span>
+              These are optional! We've pre-selected smart defaults based on your industry.
+              The more you customize, the better your site will be - but even skipping this produces great results.
+            </p>
+
             {/* Target Audience */}
             <div style={styles.formSection}>
               <label style={styles.formLabel}>Who are your customers?</label>
@@ -4978,14 +7254,18 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
             </div>
           </CollapsibleSection>
 
-          {/* SECTION 3: Design & Colors */}
+          {/* SECTION 3: Design & Colors - Collapsed by default */}
           <CollapsibleSection
             title="Design & Colors"
             icon="🎨"
-            defaultOpen={true}
-            badge={projectData.selectedPreset || 'Custom'}
-            tooltip="Choose your color scheme and visual style"
+            defaultOpen={false}
+            badge={projectData.selectedPreset || 'Auto'}
+            tooltip="Optional - we'll pick colors that match your industry"
           >
+            <p style={customizeStyles.sectionIntro}>
+              <span style={customizeStyles.hintIcon}>💡</span>
+              Skip this and we'll choose a color palette that perfectly matches your industry vibe.
+            </p>
             <div style={styles.formSection}>
               <label style={styles.formLabel}>Color Palette</label>
               <p style={customizeStyles.fieldHint}>Pick a preset or customize your own colors</p>
@@ -5045,6 +7325,8 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
             </div>
           </CollapsibleSection>
 
+          </div>{/* End of responsiveStyles.sectionsGrid */}
+
           {/* SECTION 3.5: Layout Style - Visual Layout Selection */}
           <CollapsibleSection
             title="Layout Style"
@@ -5052,6 +7334,7 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
             defaultOpen={true}
             badge={projectData.layoutStyleId ? getLayoutsForIndustry(projectData.industryKey).find(l => l.id === projectData.layoutStyleId)?.name : 'Choose a style'}
             tooltip="Choose how your website sections are arranged"
+            fullWidth={true}
           >
             <div style={styles.formSection}>
               <label style={styles.formLabel}>
@@ -5081,10 +7364,14 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
           <CollapsibleSection
             title="Website Pages"
             icon="📄"
-            defaultOpen={true}
+            defaultOpen={false}
             badge={`${projectData.selectedPages.length} selected`}
             tooltip="Choose which pages to include in your website"
           >
+            <p style={customizeStyles.sectionIntro}>
+              <span style={customizeStyles.hintIcon}>💡</span>
+              We've pre-selected the essential pages. Add more if needed, or generate now!
+            </p>
             {/* Website Pages */}
             <div style={styles.formSection}>
               <label style={styles.formLabel}>Standard Pages</label>
@@ -5129,134 +7416,60 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
                 ))}
               </div>
             </div>
-          </CollapsibleSection>
 
-          {/* SECTION 5: Industry & Layout */}
-          <CollapsibleSection
-            title="Industry & Layout"
-            icon="⚙️"
-            defaultOpen={false}
-            badge={projectData.industry?.name || 'Auto-detect'}
-            tooltip="Fine-tune your site structure based on your industry"
-          >
-            {/* Industry Selection */}
-            {Object.keys(industries).length > 0 && (
-              <div style={styles.formSection}>
-                <label style={styles.formLabel}>
-                  Industry Template
-                  <span style={p1Styles.tooltipIcon} title="Industry templates include optimized page layouts and section ordering for your business type">ⓘ</span>
-                </label>
-                <p style={customizeStyles.fieldHint}>Select your industry for optimized page structure</p>
-                <select
-                  value={projectData.industryKey || ''}
-                  onChange={(e) => {
-                    const ind = industries[e.target.value];
-                    updateProject({
-                      industryKey: e.target.value,
-                      industry: ind,
-                      layoutKey: null,
-                      effects: ind?.effects || []
-                    });
-                  }}
-                  style={styles.formSelect}
-                >
-                  <option value="">Auto-detect from business name</option>
-                  {Object.entries(industries).map(([key, ind]) => (
-                    <option key={key} value={key}>{ind.icon} {ind.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-          {/* Layout Selection - Industry-Specific */}
-          {projectData.industryKey && INDUSTRY_LAYOUTS[projectData.industryKey] && (
+            {/* Video Hero Background Toggle */}
             <div style={styles.formSection}>
               <label style={styles.formLabel}>
-                Layout Style
-                <span style={layoutStyles.detectedBadge}>
-                  {INDUSTRY_LAYOUTS[projectData.industryKey]?.name}
-                </span>
+                Hero Enhancements
+                <span style={customizeStyles.premiumBadge}>Premium</span>
               </label>
-              <p style={customizeStyles.fieldHint}>Choose how your site will be structured</p>
-              <div style={layoutStyles.layoutGrid}>
-                {Object.entries(INDUSTRY_LAYOUTS[projectData.industryKey].layouts).map(([layoutKey, layout]) => (
-                  <button
-                    key={layoutKey}
-                    style={{
-                      ...layoutStyles.layoutCard,
-                      ...(projectData.layoutKey === layoutKey ? layoutStyles.layoutCardActive : {})
-                    }}
-                    onClick={() => updateProject({ layoutKey })}
-                  >
-                    <div style={layoutStyles.layoutIcon}>
-                      {layoutKey === 'trust-builder' && '🏆'}
-                      {layoutKey === 'lead-generator' && '🎯'}
-                      {layoutKey === 'corporate-clean' && '✨'}
-                      {layoutKey === 'appetizing-visual' && '📸'}
-                      {layoutKey === 'menu-focused' && '📋'}
-                      {layoutKey === 'story-driven' && '📖'}
-                      {layoutKey === 'patient-first' && '💚'}
-                      {layoutKey === 'credibility-focused' && '🎓'}
-                      {layoutKey === 'booking-optimized' && '📅'}
-                      {layoutKey === 'product-showcase' && '🛍️'}
-                      {layoutKey === 'conversion-focused' && '💰'}
-                      {layoutKey === 'brand-story' && '✨'}
-                      {layoutKey === 'trust-and-call' && '📞'}
-                      {layoutKey === 'quote-generator' && '💬'}
-                      {layoutKey === 'portfolio-showcase' && '🖼️'}
-                      {layoutKey === 'motivation-driven' && '💪'}
-                      {layoutKey === 'class-scheduler' && '🗓️'}
-                      {layoutKey === 'wellness-calm' && '🧘'}
-                      {layoutKey === 'property-search' && '🏠'}
-                      {layoutKey === 'agent-brand' && '👔'}
-                      {layoutKey === 'luxury-focused' && '💎'}
-                      {layoutKey === 'course-catalog' && '📚'}
-                      {layoutKey === 'coach-personal' && '🎤'}
-                      {layoutKey === 'results-focused' && '📈'}
-                      {layoutKey === 'portfolio-first' && '🎨'}
-                      {layoutKey === 'process-driven' && '⚙️'}
-                      {layoutKey === 'brand-bold' && '🔥'}
-                      {layoutKey === 'service-focused' && '🔧'}
-                      {layoutKey === 'inventory-showcase' && '🚗'}
-                      {layoutKey === 'premium-detail' && '✨'}
-                      {!['trust-builder', 'lead-generator', 'corporate-clean', 'appetizing-visual', 'menu-focused', 'story-driven', 'patient-first', 'credibility-focused', 'booking-optimized', 'product-showcase', 'conversion-focused', 'brand-story', 'trust-and-call', 'quote-generator', 'portfolio-showcase', 'motivation-driven', 'class-scheduler', 'wellness-calm', 'property-search', 'agent-brand', 'luxury-focused', 'course-catalog', 'coach-personal', 'results-focused', 'portfolio-first', 'process-driven', 'brand-bold', 'service-focused', 'inventory-showcase', 'premium-detail'].includes(layoutKey) && '📐'}
-                    </div>
-                    <div style={layoutStyles.layoutInfo}>
-                      <div style={layoutStyles.layoutName}>{layout.name}</div>
-                      <div style={layoutStyles.layoutDesc}>{layout.description}</div>
-                    </div>
-                    {projectData.layoutKey === layoutKey && (
-                      <div style={layoutStyles.layoutCheck}>✓</div>
-                    )}
-                  </button>
-                ))}
+              <div style={customizeStyles.videoToggleContainer}>
+                <label style={customizeStyles.videoToggleLabel}>
+                  <input
+                    type="checkbox"
+                    checked={(() => {
+                      // If user explicitly set, use that
+                      if (projectData.enableVideoHero !== null) return projectData.enableVideoHero;
+                      // Otherwise, auto-enable for supported industries
+                      const videoIndustries = ['tattoo', 'barbershop', 'barber', 'restaurant', 'pizza', 'pizzeria', 'fitness', 'gym', 'spa', 'salon', 'wellness'];
+                      const industry = (projectData.industryKey || '').toLowerCase();
+                      return videoIndustries.some(v => industry.includes(v));
+                    })()}
+                    onChange={(e) => updateProject({ enableVideoHero: e.target.checked })}
+                    style={customizeStyles.videoCheckbox}
+                  />
+                  <span style={customizeStyles.videoToggleText}>
+                    <span style={customizeStyles.videoIcon}>🎬</span>
+                    Enable Video Hero Background
+                  </span>
+                </label>
+                <p style={customizeStyles.videoToggleHint}>
+                  {(() => {
+                    const videoIndustries = ['tattoo', 'barbershop', 'barber', 'restaurant', 'pizza', 'pizzeria', 'fitness', 'gym', 'spa', 'salon', 'wellness'];
+                    const industry = (projectData.industryKey || '').toLowerCase();
+                    const isSupported = videoIndustries.some(v => industry.includes(v));
+                    if (isSupported) {
+                      return '✨ Your industry has a curated video available! Video auto-plays on desktop, shows image on mobile.';
+                    }
+                    return 'Video backgrounds create stunning first impressions. Currently available for restaurants, fitness, spas, barbershops, and tattoo studios.';
+                  })()}
+                </p>
               </div>
-
-              {/* Section Preview for Selected Layout */}
-              {projectData.layoutKey && INDUSTRY_LAYOUTS[projectData.industryKey].layouts[projectData.layoutKey] && (
-                <div style={layoutStyles.sectionPreview}>
-                  <div style={layoutStyles.sectionPreviewLabel}>Section Order:</div>
-                  <div style={layoutStyles.sectionFlow}>
-                    {INDUSTRY_LAYOUTS[projectData.industryKey].layouts[projectData.layoutKey].sectionOrder.map((section, idx) => (
-                      <span key={idx} style={layoutStyles.sectionChip}>
-                        {section.label || section.section}
-                        {!section.required && <span style={layoutStyles.optionalTag}>opt</span>}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
-          )}
           </CollapsibleSection>
 
-          {/* SECTION 6: Advanced - Extra Details */}
+          {/* SECTION 5: Advanced - Extra Details */}
           <CollapsibleSection
             title="Advanced AI Instructions"
             icon="🤖"
             defaultOpen={false}
-            tooltip="Give the AI specific instructions for customizing your site"
+            tooltip="Power users only - give AI specific customization instructions"
           >
+            <p style={customizeStyles.sectionIntro}>
+              <span style={customizeStyles.hintIcon}>🔧</span>
+              For power users: Add specific instructions if you have unique requirements.
+              Skip this for a great result using smart defaults!
+            </p>
             <div style={styles.formSection}>
               <label style={styles.formLabel}>
                 Extra Details for AI
@@ -5279,7 +7492,7 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
         </div>
 
         {/* RIGHT: Live Preview - Updates based on layout selection */}
-        <div style={styles.previewContainer}>
+        <div style={{...styles.previewContainer, ...responsiveStyles.preview}}>
           <div style={styles.previewHeader}>
             <span>Live Preview</span>
             {projectData.layoutStyleId && (
@@ -5321,6 +7534,20 @@ function CustomizeStep({ projectData, updateProject, industries, layouts, effect
         {!projectData.businessName.trim() && (
           <p style={p1Styles.warningText}>⚠️ Please enter a business name to continue</p>
         )}
+
+        {/* Reassurance message */}
+        {projectData.businessName.trim() && (
+          <div style={customizeStyles.readyMessage}>
+            <span style={customizeStyles.readyIcon}>✨</span>
+            <div>
+              <p style={customizeStyles.readyTitle}>Ready to generate!</p>
+              <p style={customizeStyles.readySubtitle}>
+                We'll use smart defaults for anything you skipped. The more details you provide, the better your site will be.
+              </p>
+            </div>
+          </div>
+        )}
+
         <button
           style={{
             ...styles.generateBtn,
@@ -5424,6 +7651,165 @@ const customizeStyles = {
     borderRadius: '4px',
     fontSize: '11px',
     color: '#666'
+  },
+  // Business Name Intelligence Styles
+  inferenceBox: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%)',
+    border: '1px solid rgba(34, 197, 94, 0.2)',
+    borderRadius: '10px'
+  },
+  inferenceLabel: {
+    color: '#22c55e',
+    fontSize: '12px',
+    fontWeight: '600',
+    marginBottom: '8px',
+    display: 'block'
+  },
+  inferenceChips: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginBottom: '6px'
+  },
+  inferenceChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '4px 10px',
+    background: 'rgba(255,255,255,0.08)',
+    borderRadius: '12px',
+    color: '#fff',
+    fontSize: '12px',
+    fontWeight: '500'
+  },
+  inferenceHint: {
+    color: '#666',
+    fontSize: '11px',
+    margin: 0
+  },
+  // High-Impact Question Styles
+  sectionIntro: {
+    color: '#888',
+    fontSize: '13px',
+    marginBottom: '16px',
+    lineHeight: 1.5
+  },
+  impactChip: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '12px 16px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '10px',
+    color: '#888',
+    fontSize: '13px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    minWidth: '80px',
+    flex: '1 1 auto'
+  },
+  impactChipActive: {
+    background: 'rgba(34, 197, 94, 0.15)',
+    borderColor: '#22c55e',
+    color: '#22c55e'
+  },
+  impactChipIcon: {
+    fontSize: '20px'
+  },
+  impactChipDesc: {
+    fontSize: '10px',
+    color: '#666',
+    marginTop: '2px'
+  },
+  // Field Hint with Icon
+  fieldHintWithIcon: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: '#666',
+    fontSize: '12px',
+    marginTop: '8px',
+    marginBottom: 0
+  },
+  hintIcon: {
+    fontSize: '14px'
+  },
+  // Ready to Generate Message
+  readyMessage: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    padding: '16px 20px',
+    background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)',
+    border: '1px solid rgba(34, 197, 94, 0.2)',
+    borderRadius: '12px',
+    marginBottom: '16px'
+  },
+  readyIcon: {
+    fontSize: '24px',
+    marginTop: '2px'
+  },
+  readyTitle: {
+    color: '#22c55e',
+    fontSize: '14px',
+    fontWeight: '600',
+    margin: '0 0 4px 0'
+  },
+  readySubtitle: {
+    color: '#888',
+    fontSize: '13px',
+    margin: 0,
+    lineHeight: 1.4
+  },
+  // Video Hero Toggle Styles
+  premiumBadge: {
+    marginLeft: '8px',
+    padding: '2px 8px',
+    background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%)',
+    borderRadius: '4px',
+    fontSize: '10px',
+    color: '#a855f7',
+    fontWeight: '600'
+  },
+  videoToggleContainer: {
+    padding: '16px',
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '12px'
+  },
+  videoToggleLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    cursor: 'pointer'
+  },
+  videoCheckbox: {
+    width: '20px',
+    height: '20px',
+    accentColor: '#22c55e',
+    cursor: 'pointer'
+  },
+  videoToggleText: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    color: '#fff',
+    fontSize: '14px',
+    fontWeight: '500'
+  },
+  videoIcon: {
+    fontSize: '18px'
+  },
+  videoToggleHint: {
+    color: '#888',
+    fontSize: '12px',
+    marginTop: '10px',
+    marginLeft: '32px',
+    lineHeight: 1.5
   }
 };
 
@@ -5802,7 +8188,7 @@ const genStepStyles = {
 // ============================================
 // COMPLETE STEP
 // ============================================
-function CompleteStep({ result, projectData, onReset, blinkCount, onDeploy, deployReady }) {
+function CompleteStep({ result, projectData, onReset, blinkCount, onDeploy, deployReady, onAddTools, industry }) {
   const blinkMessage = blinkCount <= 1 
     ? "Less than a blink! ⚡" 
     : `Only ${blinkCount} blinks! 👁️`;
@@ -5921,6 +8307,2891 @@ function CompleteStep({ result, projectData, onReset, blinkCount, onDeploy, depl
         <button style={styles.actionBtn} onClick={handleOpenVSCode}>💻 Open in VS Code</button>
         <button style={styles.actionBtnSecondary} onClick={onReset}>+ Create Another</button>
       </div>
+
+      {/* Cross-link to tools */}
+      {onAddTools && (
+        <div style={{
+          marginTop: '32px',
+          paddingTop: '24px',
+          borderTop: '1px solid #e5e7eb',
+          textAlign: 'center',
+          width: '100%',
+          maxWidth: '600px'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            padding: '20px 24px',
+            background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+            borderRadius: '16px',
+            border: '1px solid #fcd34d'
+          }}>
+            <span style={{ fontSize: '1.5rem' }}>🔧</span>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>
+                Want tools for your {industry || 'business'} too?
+              </div>
+              <div style={{ fontSize: '0.85rem', color: '#a16207', marginBottom: '8px' }}>
+                Calculators, forms, trackers & more
+              </div>
+              <button
+                onClick={onAddTools}
+                style={{
+                  padding: '10px 24px',
+                  fontSize: '0.9rem',
+                  fontWeight: '600',
+                  background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Add Business Tools →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// TOOL COMPLETE SCREEN
+// ============================================
+function ToolCompleteScreen({ toolResult, onReset, onBuildAnother, onBuildSite, industry }) {
+  const [copied, setCopied] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
+  const [showTestDetails, setShowTestDetails] = useState(false);
+
+  const tool = toolResult?.tool || {};
+  const html = toolResult?.html || '';
+  const projectPath = toolResult?.project?.path;
+  const testResults = toolResult?.testResults || null;
+
+  // Create blob URL for iframe preview
+  const previewUrl = html ? URL.createObjectURL(new Blob([html], { type: 'text/html' })) : null;
+
+  // Cleanup blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const handleDownload = () => {
+    if (!html) return;
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(tool.name || 'tool').toLowerCase().replace(/\s+/g, '-')}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyCode = async () => {
+    if (!html) return;
+    try {
+      await navigator.clipboard.writeText(html);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const handleOpenFolder = async () => {
+    if (!projectPath) return;
+    try {
+      await fetch(`${API_BASE}/api/open-folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: projectPath })
+      });
+    } catch (err) {
+      console.error('Failed to open folder:', err);
+    }
+  };
+
+  const toolCompleteStyles = {
+    container: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '40px 20px',
+      minHeight: '80vh'
+    },
+    header: {
+      textAlign: 'center',
+      marginBottom: '32px'
+    },
+    icon: {
+      fontSize: '4rem',
+      marginBottom: '16px'
+    },
+    title: {
+      fontSize: '2rem',
+      fontWeight: '700',
+      marginBottom: '8px',
+      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent'
+    },
+    subtitle: {
+      fontSize: '1rem',
+      color: '#666'
+    },
+    previewSection: {
+      width: '100%',
+      maxWidth: '800px',
+      marginBottom: '32px'
+    },
+    previewHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '16px'
+    },
+    previewLabel: {
+      fontSize: '0.9rem',
+      fontWeight: '600',
+      color: '#333'
+    },
+    previewToggle: {
+      padding: '6px 12px',
+      fontSize: '0.8rem',
+      background: '#f1f5f9',
+      border: '1px solid #e2e8f0',
+      borderRadius: '6px',
+      cursor: 'pointer'
+    },
+    previewFrame: {
+      width: '100%',
+      height: '500px',
+      border: '2px solid #e2e8f0',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      background: 'white'
+    },
+    iframe: {
+      width: '100%',
+      height: '100%',
+      border: 'none'
+    },
+    actionsGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, 1fr)',
+      gap: '16px',
+      width: '100%',
+      maxWidth: '600px',
+      marginBottom: '32px'
+    },
+    actionCard: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '24px 16px',
+      background: 'white',
+      border: '2px solid #e2e8f0',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease'
+    },
+    actionCardHover: {
+      borderColor: '#10b981',
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)'
+    },
+    actionIcon: {
+      fontSize: '2rem',
+      marginBottom: '8px'
+    },
+    actionLabel: {
+      fontSize: '0.9rem',
+      fontWeight: '600',
+      color: '#333'
+    },
+    actionHint: {
+      fontSize: '0.75rem',
+      color: '#888',
+      marginTop: '4px'
+    },
+    toolInfo: {
+      display: 'flex',
+      gap: '16px',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      marginBottom: '24px'
+    },
+    infoBadge: {
+      padding: '8px 16px',
+      background: '#f0fdf4',
+      borderRadius: '8px',
+      fontSize: '0.85rem',
+      color: '#166534'
+    },
+    secondaryActions: {
+      display: 'flex',
+      gap: '12px',
+      marginTop: '16px'
+    },
+    secondaryBtn: {
+      padding: '10px 20px',
+      fontSize: '0.9rem',
+      background: 'transparent',
+      border: '1px solid #ddd',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      color: '#666'
+    },
+    primaryBtn: {
+      padding: '10px 24px',
+      fontSize: '0.9rem',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      border: 'none',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      color: 'white',
+      fontWeight: '600'
+    },
+    // Test results styles
+    testResultsSection: {
+      width: '100%',
+      maxWidth: '600px',
+      marginBottom: '24px'
+    },
+    testResultsHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: '12px'
+    },
+    testResultsTitle: {
+      fontSize: '0.9rem',
+      fontWeight: '600',
+      color: '#333',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    },
+    testSummary: {
+      display: 'flex',
+      gap: '16px',
+      padding: '16px',
+      background: '#f8fafc',
+      borderRadius: '10px',
+      border: '1px solid #e2e8f0'
+    },
+    testStat: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      fontSize: '0.85rem'
+    },
+    testStatIcon: {
+      fontSize: '1rem'
+    },
+    testStatValue: {
+      fontWeight: '600'
+    },
+    testStatLabel: {
+      color: '#666'
+    },
+    testDetailsToggle: {
+      fontSize: '0.75rem',
+      color: '#666',
+      background: 'none',
+      border: 'none',
+      cursor: 'pointer',
+      textDecoration: 'underline'
+    },
+    testDetailsList: {
+      marginTop: '12px',
+      padding: '12px',
+      background: '#fafafa',
+      borderRadius: '8px',
+      fontSize: '0.8rem',
+      maxHeight: '200px',
+      overflowY: 'auto'
+    },
+    testDetailItem: {
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: '8px',
+      padding: '4px 0',
+      borderBottom: '1px solid #eee'
+    },
+    testDetailIcon: {
+      flexShrink: 0
+    },
+    testDetailText: {
+      color: '#555'
+    }
+  };
+
+  return (
+    <div style={toolCompleteStyles.container}>
+      <div style={toolCompleteStyles.header}>
+        <div style={toolCompleteStyles.icon}>{tool.icon || '🛠️'}</div>
+        <h1 style={toolCompleteStyles.title}>{tool.name || 'Tool'} is Ready!</h1>
+        <p style={toolCompleteStyles.subtitle}>
+          Your tool is complete and works offline
+        </p>
+      </div>
+
+      {/* Tool Info Badges */}
+      <div style={toolCompleteStyles.toolInfo}>
+        {tool.category && (
+          <span style={toolCompleteStyles.infoBadge}>
+            Category: {tool.category}
+          </span>
+        )}
+        {tool.features && (
+          <span style={toolCompleteStyles.infoBadge}>
+            {tool.features.length} features
+          </span>
+        )}
+        <span style={toolCompleteStyles.infoBadge}>
+          Self-contained HTML
+        </span>
+      </div>
+
+      {/* Test Results Section */}
+      {testResults && (
+        <div style={toolCompleteStyles.testResultsSection}>
+          <div style={toolCompleteStyles.testResultsHeader}>
+            <span style={toolCompleteStyles.testResultsTitle}>
+              {testResults.allPassed ? '✅' : testResults.failed > 0 ? '❌' : '⚠️'}
+              Validation Tests
+            </span>
+            {testResults.details && testResults.details.length > 0 && (
+              <button
+                style={toolCompleteStyles.testDetailsToggle}
+                onClick={() => setShowTestDetails(!showTestDetails)}
+              >
+                {showTestDetails ? 'Hide details' : 'Show details'}
+              </button>
+            )}
+          </div>
+          <div style={toolCompleteStyles.testSummary}>
+            <div style={toolCompleteStyles.testStat}>
+              <span style={toolCompleteStyles.testStatIcon}>✅</span>
+              <span style={{...toolCompleteStyles.testStatValue, color: '#10b981'}}>{testResults.passed}</span>
+              <span style={toolCompleteStyles.testStatLabel}>passed</span>
+            </div>
+            {testResults.warnings > 0 && (
+              <div style={toolCompleteStyles.testStat}>
+                <span style={toolCompleteStyles.testStatIcon}>⚠️</span>
+                <span style={{...toolCompleteStyles.testStatValue, color: '#f59e0b'}}>{testResults.warnings}</span>
+                <span style={toolCompleteStyles.testStatLabel}>warnings</span>
+              </div>
+            )}
+            {testResults.failed > 0 && (
+              <div style={toolCompleteStyles.testStat}>
+                <span style={toolCompleteStyles.testStatIcon}>❌</span>
+                <span style={{...toolCompleteStyles.testStatValue, color: '#ef4444'}}>{testResults.failed}</span>
+                <span style={toolCompleteStyles.testStatLabel}>failed</span>
+              </div>
+            )}
+          </div>
+          {showTestDetails && testResults.details && (
+            <div style={toolCompleteStyles.testDetailsList}>
+              {testResults.details.map((detail, idx) => (
+                <div key={idx} style={toolCompleteStyles.testDetailItem}>
+                  <span style={toolCompleteStyles.testDetailIcon}>
+                    {detail.status === 'pass' ? '✅' : detail.status === 'warning' ? '⚠️' : '❌'}
+                  </span>
+                  <span style={toolCompleteStyles.testDetailText}>{detail.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Preview Section */}
+      {html && (
+        <div style={toolCompleteStyles.previewSection}>
+          <div style={toolCompleteStyles.previewHeader}>
+            <span style={toolCompleteStyles.previewLabel}>Live Preview</span>
+            <button
+              style={toolCompleteStyles.previewToggle}
+              onClick={() => setShowPreview(!showPreview)}
+            >
+              {showPreview ? 'Hide' : 'Show'} Preview
+            </button>
+          </div>
+          {showPreview && previewUrl && (
+            <div style={toolCompleteStyles.previewFrame}>
+              <iframe
+                src={previewUrl}
+                style={toolCompleteStyles.iframe}
+                title="Tool Preview"
+                sandbox="allow-scripts allow-forms"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Action Cards */}
+      <div style={toolCompleteStyles.actionsGrid}>
+        <div
+          style={toolCompleteStyles.actionCard}
+          onClick={handleDownload}
+          onMouseEnter={(e) => Object.assign(e.currentTarget.style, toolCompleteStyles.actionCardHover)}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#e2e8f0';
+            e.currentTarget.style.transform = 'none';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
+          <span style={toolCompleteStyles.actionIcon}>📥</span>
+          <span style={toolCompleteStyles.actionLabel}>Download</span>
+          <span style={toolCompleteStyles.actionHint}>Single HTML file</span>
+        </div>
+
+        <div
+          style={toolCompleteStyles.actionCard}
+          onClick={handleCopyCode}
+          onMouseEnter={(e) => Object.assign(e.currentTarget.style, toolCompleteStyles.actionCardHover)}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#e2e8f0';
+            e.currentTarget.style.transform = 'none';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
+          <span style={toolCompleteStyles.actionIcon}>{copied ? '✅' : '📋'}</span>
+          <span style={toolCompleteStyles.actionLabel}>{copied ? 'Copied!' : 'Copy Code'}</span>
+          <span style={toolCompleteStyles.actionHint}>To clipboard</span>
+        </div>
+
+        {projectPath && (
+          <div
+            style={toolCompleteStyles.actionCard}
+            onClick={handleOpenFolder}
+            onMouseEnter={(e) => Object.assign(e.currentTarget.style, toolCompleteStyles.actionCardHover)}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = '#e2e8f0';
+              e.currentTarget.style.transform = 'none';
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+          >
+            <span style={toolCompleteStyles.actionIcon}>📂</span>
+            <span style={toolCompleteStyles.actionLabel}>Open Folder</span>
+            <span style={toolCompleteStyles.actionHint}>View files</span>
+          </div>
+        )}
+      </div>
+
+      {/* Secondary Actions */}
+      <div style={toolCompleteStyles.secondaryActions}>
+        <button style={toolCompleteStyles.secondaryBtn} onClick={onReset}>
+          ← Back to Home
+        </button>
+        <button style={toolCompleteStyles.primaryBtn} onClick={onBuildAnother}>
+          + Build Another Tool
+        </button>
+      </div>
+
+      {/* Cross-link to website */}
+      {onBuildSite && (
+        <div style={{
+          marginTop: '32px',
+          paddingTop: '24px',
+          borderTop: '1px solid #e5e7eb',
+          textAlign: 'center',
+          width: '100%',
+          maxWidth: '600px'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            padding: '20px 24px',
+            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+            borderRadius: '16px',
+            border: '1px solid #bfdbfe'
+          }}>
+            <span style={{ fontSize: '1.5rem' }}>🌐</span>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>
+                Want a full website for your {industry || 'business'} too?
+              </div>
+              <div style={{ fontSize: '0.85rem', color: '#3b82f6', marginBottom: '8px' }}>
+                Complete site with pages, backend & admin
+              </div>
+              <button
+                onClick={onBuildSite}
+                style={{
+                  padding: '10px 24px',
+                  fontSize: '0.9rem',
+                  fontWeight: '600',
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Build Website →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// CHOICE SCREEN - Shown when input is ambiguous
+// ============================================
+function ChoiceScreen({ detectedIndustry, industryDisplay, industryIcon, originalInput, onChooseSite, onChooseTools, onBack }) {
+  const choiceStyles = {
+    container: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '60px 20px',
+      minHeight: '70vh'
+    },
+    header: {
+      textAlign: 'center',
+      marginBottom: '48px'
+    },
+    detected: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '12px',
+      padding: '12px 24px',
+      background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
+      borderRadius: '50px',
+      marginBottom: '24px',
+      border: '1px solid #bbf7d0'
+    },
+    detectedIcon: {
+      fontSize: '2rem'
+    },
+    detectedText: {
+      fontSize: '1.1rem',
+      color: '#166534'
+    },
+    detectedIndustry: {
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em'
+    },
+    title: {
+      fontSize: '2.25rem',
+      fontWeight: '800',
+      marginBottom: '12px',
+      color: '#1f2937'
+    },
+    subtitle: {
+      fontSize: '1.1rem',
+      color: '#6b7280',
+      maxWidth: '500px'
+    },
+    cardsContainer: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(2, 1fr)',
+      gap: '24px',
+      width: '100%',
+      maxWidth: '700px',
+      marginBottom: '32px'
+    },
+    card: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '32px 24px',
+      background: 'white',
+      border: '2px solid #e5e7eb',
+      borderRadius: '20px',
+      cursor: 'pointer',
+      transition: 'all 0.3s ease',
+      textAlign: 'center'
+    },
+    cardSite: {
+      ':hover': {
+        borderColor: '#3b82f6',
+        boxShadow: '0 8px 30px rgba(59, 130, 246, 0.15)'
+      }
+    },
+    cardTools: {
+      ':hover': {
+        borderColor: '#f59e0b',
+        boxShadow: '0 8px 30px rgba(245, 158, 11, 0.15)'
+      }
+    },
+    cardIcon: {
+      fontSize: '3.5rem',
+      marginBottom: '16px'
+    },
+    cardTitle: {
+      fontSize: '1.5rem',
+      fontWeight: '700',
+      marginBottom: '12px',
+      color: '#1f2937'
+    },
+    cardDescription: {
+      fontSize: '0.95rem',
+      color: '#6b7280',
+      lineHeight: '1.6',
+      marginBottom: '24px',
+      minHeight: '60px'
+    },
+    cardButton: {
+      padding: '14px 32px',
+      fontSize: '1rem',
+      fontWeight: '600',
+      border: 'none',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease'
+    },
+    cardButtonSite: {
+      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+      color: 'white'
+    },
+    cardButtonTools: {
+      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+      color: 'white'
+    },
+    footer: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '16px'
+    },
+    footerNote: {
+      fontSize: '0.9rem',
+      color: '#9ca3af',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    },
+    backBtn: {
+      padding: '10px 20px',
+      fontSize: '0.9rem',
+      background: 'transparent',
+      border: '1px solid #d1d5db',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      color: '#6b7280'
+    }
+  };
+
+  return (
+    <div style={choiceStyles.container}>
+      <div style={choiceStyles.header}>
+        <div style={choiceStyles.detected}>
+          <span style={choiceStyles.detectedIcon}>{industryIcon}</span>
+          <span style={choiceStyles.detectedText}>
+            We detected: <span style={choiceStyles.detectedIndustry}>{industryDisplay}</span>
+          </span>
+        </div>
+        <h1 style={choiceStyles.title}>What would you like to build?</h1>
+        <p style={choiceStyles.subtitle}>
+          Choose how you want to power your {industryDisplay?.toLowerCase()} business
+        </p>
+      </div>
+
+      <div style={choiceStyles.cardsContainer}>
+        {/* Full Website Card */}
+        <div
+          style={choiceStyles.card}
+          onClick={onChooseSite}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#3b82f6';
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 12px 40px rgba(59, 130, 246, 0.2)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#e5e7eb';
+            e.currentTarget.style.transform = 'none';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
+          <span style={choiceStyles.cardIcon}>🌐</span>
+          <h2 style={choiceStyles.cardTitle}>Full Website</h2>
+          <p style={choiceStyles.cardDescription}>
+            Complete site with multiple pages, backend integration, and admin dashboard
+          </p>
+          <button style={{...choiceStyles.cardButton, ...choiceStyles.cardButtonSite}}>
+            Build Site →
+          </button>
+        </div>
+
+        {/* Business Tools Card */}
+        <div
+          style={choiceStyles.card}
+          onClick={onChooseTools}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#f59e0b';
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 12px 40px rgba(245, 158, 11, 0.2)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#e5e7eb';
+            e.currentTarget.style.transform = 'none';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
+          <span style={choiceStyles.cardIcon}>🧰</span>
+          <h2 style={choiceStyles.cardTitle}>Business Tools</h2>
+          <p style={choiceStyles.cardDescription}>
+            Calculators, forms, trackers & utilities tailored for {industryDisplay?.toLowerCase() || 'your industry'}
+          </p>
+          <button style={{...choiceStyles.cardButton, ...choiceStyles.cardButtonTools}}>
+            See Tools →
+          </button>
+        </div>
+      </div>
+
+      <div style={choiceStyles.footer}>
+        <p style={choiceStyles.footerNote}>
+          ⚡ Both include branding & customization options
+        </p>
+        <button style={choiceStyles.backBtn} onClick={onBack}>
+          ← Start Over
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// SITE CUSTOMIZATION SCREEN
+// ============================================
+
+function SiteCustomizationScreen({
+  industry,
+  industryDisplay,
+  industryIcon,
+  sharedContext,
+  onGenerate,
+  onBack,
+  onUpdateContext
+}) {
+  const [businessName, setBusinessName] = useState(sharedContext?.businessName || '');
+  const [location, setLocation] = useState(sharedContext?.location || '');
+  const [tagline, setTagline] = useState(sharedContext?.tagline || '');
+  const [brandColor, setBrandColor] = useState(sharedContext?.brandColor || '#3b82f6');
+  const [style, setStyle] = useState(sharedContext?.style || 'modern');
+  const [logo, setLogo] = useState(sharedContext?.logo || null);
+  const [adminLevel, setAdminLevel] = useState('standard');
+  const [dragOver, setDragOver] = useState(false);
+
+  // Get page config for this industry
+  const industryCategory = getIndustryPageCategory(industry);
+  const pageConfig = INDUSTRY_PAGES[industryCategory] || INDUSTRY_PAGES.default;
+  const [selectedPages, setSelectedPages] = useState(pageConfig.recommended);
+
+  function getIndustryPageCategory(ind) {
+    if (!ind) return 'default';
+    const lowerInd = ind.toLowerCase();
+    if (['pizza', 'restaurant', 'cafe', 'bar'].includes(lowerInd)) return 'food-beverage';
+    if (lowerInd === 'bakery') return 'bakery';
+    if (['law-firm', 'accounting', 'consulting', 'real-estate', 'insurance'].includes(lowerInd)) return 'professional-services';
+    if (['healthcare', 'dental', 'chiropractic', 'spa-salon'].includes(lowerInd)) return 'healthcare';
+    if (['fitness', 'yoga', 'gym'].includes(lowerInd)) return 'fitness';
+    if (['saas', 'startup', 'agency', 'tech'].includes(lowerInd)) return 'technology';
+    if (['photography', 'wedding', 'portfolio', 'musician', 'podcast'].includes(lowerInd)) return 'creative';
+    if (['ecommerce', 'retail', 'shop'].includes(lowerInd)) return 'retail';
+    if (['construction', 'plumber', 'electrician', 'landscaping', 'cleaning', 'auto-repair', 'moving', 'hvac', 'roofing'].includes(lowerInd)) return 'trade-services';
+    return 'default';
+  }
+
+  const togglePage = (pageId) => {
+    setSelectedPages(prev =>
+      prev.includes(pageId)
+        ? prev.filter(p => p !== pageId)
+        : [...prev, pageId]
+    );
+  };
+
+  const handleLogoDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => setLogo(e.target.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleLogoSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => setLogo(e.target.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleGenerate = () => {
+    // Update shared context
+    if (onUpdateContext) {
+      onUpdateContext({
+        businessName,
+        brandColor,
+        location,
+        industry,
+        industryDisplay,
+        style,
+        logo,
+        tagline
+      });
+    }
+    // Call generate with all config
+    onGenerate({
+      businessName,
+      location,
+      tagline,
+      brandColor,
+      style,
+      logo,
+      selectedPages,
+      adminLevel,
+      industry,
+      industryDisplay
+    });
+  };
+
+  const customStyles = {
+    container: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '40px 20px',
+      minHeight: '80vh',
+      maxWidth: '800px',
+      margin: '0 auto'
+    },
+    header: {
+      textAlign: 'center',
+      marginBottom: '32px'
+    },
+    industryBadge: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '8px 16px',
+      background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
+      borderRadius: '50px',
+      marginBottom: '16px',
+      border: '1px solid #bbf7d0'
+    },
+    industryIcon: {
+      fontSize: '1.5rem'
+    },
+    industryText: {
+      fontSize: '0.95rem',
+      fontWeight: '600',
+      color: '#166534',
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em'
+    },
+    title: {
+      fontSize: '1.75rem',
+      fontWeight: '700',
+      marginBottom: '8px',
+      color: '#1f2937'
+    },
+    subtitle: {
+      fontSize: '1rem',
+      color: '#6b7280'
+    },
+    form: {
+      width: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '24px'
+    },
+    section: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px'
+    },
+    sectionTitle: {
+      fontSize: '0.85rem',
+      fontWeight: '600',
+      color: '#374151',
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em'
+    },
+    inputGroup: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '6px'
+    },
+    label: {
+      fontSize: '0.9rem',
+      fontWeight: '500',
+      color: '#374151'
+    },
+    required: {
+      color: '#ef4444'
+    },
+    input: {
+      padding: '12px 16px',
+      fontSize: '1rem',
+      border: '2px solid #e5e7eb',
+      borderRadius: '12px',
+      outline: 'none',
+      transition: 'border-color 0.2s ease'
+    },
+    inputHint: {
+      fontSize: '0.8rem',
+      color: '#9ca3af',
+      fontStyle: 'italic'
+    },
+    colorSection: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '16px',
+      flexWrap: 'wrap'
+    },
+    colorPicker: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '8px 12px',
+      background: '#f9fafb',
+      borderRadius: '12px',
+      border: '2px solid #e5e7eb'
+    },
+    colorInput: {
+      width: '40px',
+      height: '40px',
+      border: 'none',
+      borderRadius: '8px',
+      cursor: 'pointer'
+    },
+    colorPresets: {
+      display: 'flex',
+      gap: '8px',
+      flexWrap: 'wrap'
+    },
+    colorSwatch: {
+      width: '32px',
+      height: '32px',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      border: '2px solid transparent',
+      transition: 'all 0.2s ease'
+    },
+    colorSwatchSelected: {
+      border: '2px solid #1f2937',
+      transform: 'scale(1.1)'
+    },
+    styleOptions: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(4, 1fr)',
+      gap: '12px'
+    },
+    styleOption: {
+      padding: '16px 12px',
+      background: 'white',
+      border: '2px solid #e5e7eb',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      textAlign: 'center',
+      transition: 'all 0.2s ease'
+    },
+    styleOptionSelected: {
+      borderColor: '#3b82f6',
+      background: '#eff6ff'
+    },
+    styleLabel: {
+      fontSize: '0.95rem',
+      fontWeight: '600',
+      color: '#1f2937',
+      marginBottom: '4px'
+    },
+    styleDesc: {
+      fontSize: '0.75rem',
+      color: '#6b7280'
+    },
+    logoDropzone: {
+      padding: '24px',
+      border: '2px dashed #d1d5db',
+      borderRadius: '12px',
+      textAlign: 'center',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      background: '#f9fafb'
+    },
+    logoDropzoneActive: {
+      borderColor: '#3b82f6',
+      background: '#eff6ff'
+    },
+    logoPreview: {
+      maxWidth: '120px',
+      maxHeight: '80px',
+      objectFit: 'contain',
+      marginBottom: '8px'
+    },
+    divider: {
+      height: '1px',
+      background: '#e5e7eb',
+      margin: '8px 0'
+    },
+    pagesGrid: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '10px'
+    },
+    pageCheckbox: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '10px 16px',
+      background: 'white',
+      border: '2px solid #e5e7eb',
+      borderRadius: '10px',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      fontSize: '0.9rem'
+    },
+    pageCheckboxSelected: {
+      borderColor: '#3b82f6',
+      background: '#eff6ff'
+    },
+    pageIcon: {
+      fontSize: '1.1rem'
+    },
+    adminOptions: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, 1fr)',
+      gap: '12px'
+    },
+    adminOption: {
+      padding: '16px',
+      background: 'white',
+      border: '2px solid #e5e7eb',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      textAlign: 'center',
+      transition: 'all 0.2s ease',
+      position: 'relative'
+    },
+    adminOptionSelected: {
+      borderColor: '#3b82f6',
+      background: '#eff6ff'
+    },
+    recommendedBadge: {
+      position: 'absolute',
+      top: '-8px',
+      right: '12px',
+      padding: '2px 8px',
+      background: '#22c55e',
+      color: 'white',
+      fontSize: '0.65rem',
+      fontWeight: '600',
+      borderRadius: '4px',
+      textTransform: 'uppercase'
+    },
+    adminLabel: {
+      fontSize: '1rem',
+      fontWeight: '600',
+      color: '#1f2937',
+      marginBottom: '4px'
+    },
+    adminDesc: {
+      fontSize: '0.8rem',
+      color: '#6b7280'
+    },
+    actions: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: '16px',
+      paddingTop: '24px',
+      borderTop: '1px solid #e5e7eb'
+    },
+    backBtn: {
+      padding: '12px 24px',
+      fontSize: '0.95rem',
+      background: 'transparent',
+      border: '2px solid #d1d5db',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      color: '#6b7280',
+      fontWeight: '500'
+    },
+    generateBtn: {
+      padding: '14px 32px',
+      fontSize: '1.1rem',
+      fontWeight: '700',
+      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+      color: 'white',
+      border: 'none',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      transition: 'all 0.2s ease',
+      boxShadow: '0 4px 14px rgba(59, 130, 246, 0.4)'
+    },
+    generateBtnDisabled: {
+      opacity: 0.5,
+      cursor: 'not-allowed'
+    }
+  };
+
+  return (
+    <div style={customStyles.container}>
+      <div style={customStyles.header}>
+        <div style={customStyles.industryBadge}>
+          <span style={customStyles.industryIcon}>{industryIcon}</span>
+          <span style={customStyles.industryText}>{industryDisplay} Website</span>
+        </div>
+        <h1 style={customStyles.title}>Customize before we build</h1>
+        <p style={customStyles.subtitle}>Fill in what you know, skip what you don't</p>
+      </div>
+
+      <div style={customStyles.form}>
+        {/* Business Details */}
+        <div style={customStyles.section}>
+          <div style={customStyles.inputGroup}>
+            <label style={customStyles.label}>
+              Business Name <span style={customStyles.required}>*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="e.g., Sunrise Bakery"
+              value={businessName}
+              onChange={(e) => setBusinessName(e.target.value)}
+              style={customStyles.input}
+              onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+              onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
+            />
+          </div>
+
+          <div style={customStyles.inputGroup}>
+            <label style={customStyles.label}>Location</label>
+            <input
+              type="text"
+              placeholder="e.g., Austin, TX"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              style={customStyles.input}
+              onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+              onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
+            />
+          </div>
+
+          <div style={customStyles.inputGroup}>
+            <label style={customStyles.label}>Tagline</label>
+            <input
+              type="text"
+              placeholder="e.g., Baked fresh daily"
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+              style={customStyles.input}
+              onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+              onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
+            />
+            <span style={customStyles.inputHint}>Skip and we'll generate one</span>
+          </div>
+        </div>
+
+        {/* Brand Color */}
+        <div style={customStyles.section}>
+          <span style={customStyles.sectionTitle}>Brand Color</span>
+          <div style={customStyles.colorSection}>
+            <div style={customStyles.colorPicker}>
+              <input
+                type="color"
+                value={brandColor}
+                onChange={(e) => setBrandColor(e.target.value)}
+                style={customStyles.colorInput}
+              />
+              <span style={{ fontSize: '0.9rem', color: '#6b7280' }}>{brandColor}</span>
+            </div>
+            <div style={customStyles.colorPresets}>
+              {COLOR_PRESETS.map((preset) => (
+                <div
+                  key={preset.color}
+                  title={preset.name}
+                  style={{
+                    ...customStyles.colorSwatch,
+                    background: preset.color,
+                    ...(brandColor === preset.color ? customStyles.colorSwatchSelected : {})
+                  }}
+                  onClick={() => setBrandColor(preset.color)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Style */}
+        <div style={customStyles.section}>
+          <span style={customStyles.sectionTitle}>Style</span>
+          <div style={customStyles.styleOptions}>
+            {STYLE_OPTIONS.map((opt) => (
+              <div
+                key={opt.key}
+                style={{
+                  ...customStyles.styleOption,
+                  ...(style === opt.key ? customStyles.styleOptionSelected : {})
+                }}
+                onClick={() => setStyle(opt.key)}
+              >
+                <div style={customStyles.styleLabel}>{opt.label}</div>
+                <div style={customStyles.styleDesc}>{opt.description}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Logo */}
+        <div style={customStyles.section}>
+          <span style={customStyles.sectionTitle}>Logo</span>
+          <div
+            style={{
+              ...customStyles.logoDropzone,
+              ...(dragOver ? customStyles.logoDropzoneActive : {})
+            }}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleLogoDrop}
+            onClick={() => document.getElementById('logo-input').click()}
+          >
+            {logo ? (
+              <>
+                <img src={logo} alt="Logo preview" style={customStyles.logoPreview} />
+                <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>Click or drop to replace</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📁</div>
+                <div style={{ fontSize: '0.95rem', color: '#6b7280' }}>Drop logo image or click to browse</div>
+                <div style={{ fontSize: '0.8rem', color: '#9ca3af', marginTop: '4px' }}>Skip and we'll create a text logo</div>
+              </>
+            )}
+            <input
+              id="logo-input"
+              type="file"
+              accept="image/*"
+              onChange={handleLogoSelect}
+              style={{ display: 'none' }}
+            />
+          </div>
+        </div>
+
+        <div style={customStyles.divider} />
+
+        {/* Pages */}
+        <div style={customStyles.section}>
+          <span style={customStyles.sectionTitle}>
+            Pages (we recommend these for {industryDisplay?.toLowerCase() || 'your business'})
+          </span>
+          <div style={customStyles.pagesGrid}>
+            {pageConfig.recommended.map((pageId) => (
+              <div
+                key={pageId}
+                style={{
+                  ...customStyles.pageCheckbox,
+                  ...customStyles.pageCheckboxSelected
+                }}
+                onClick={() => togglePage(pageId)}
+              >
+                <span style={customStyles.pageIcon}>
+                  {selectedPages.includes(pageId) ? '✅' : '☐'}
+                </span>
+                {PAGE_LABELS[pageId] || pageId}
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: '0.85rem', color: '#6b7280', marginTop: '8px' }}>Optional:</div>
+          <div style={customStyles.pagesGrid}>
+            {pageConfig.optional.map((pageId) => (
+              <div
+                key={pageId}
+                style={{
+                  ...customStyles.pageCheckbox,
+                  ...(selectedPages.includes(pageId) ? customStyles.pageCheckboxSelected : {})
+                }}
+                onClick={() => togglePage(pageId)}
+              >
+                <span style={customStyles.pageIcon}>
+                  {selectedPages.includes(pageId) ? '✅' : '☐'}
+                </span>
+                {PAGE_LABELS[pageId] || pageId}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Admin Level */}
+        <div style={customStyles.section}>
+          <span style={customStyles.sectionTitle}>Admin Dashboard Level</span>
+          <div style={customStyles.adminOptions}>
+            {ADMIN_LEVELS.map((level) => (
+              <div
+                key={level.key}
+                style={{
+                  ...customStyles.adminOption,
+                  ...(adminLevel === level.key ? customStyles.adminOptionSelected : {})
+                }}
+                onClick={() => setAdminLevel(level.key)}
+              >
+                {level.recommended && <span style={customStyles.recommendedBadge}>Recommended</span>}
+                <div style={customStyles.adminLabel}>{level.label}</div>
+                <div style={customStyles.adminDesc}>{level.description}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={customStyles.actions}>
+          <button style={customStyles.backBtn} onClick={onBack}>
+            ← Back
+          </button>
+          <button
+            style={{
+              ...customStyles.generateBtn,
+              ...(!businessName.trim() ? customStyles.generateBtnDisabled : {})
+            }}
+            onClick={handleGenerate}
+            disabled={!businessName.trim()}
+          >
+            ⚡ BLINK →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// TOOL CUSTOMIZATION SCREEN (Single Tool)
+// ============================================
+function ToolCustomizationScreen({
+  tool,
+  toolName,
+  toolIcon,
+  sharedContext,
+  onGenerate,
+  onBack,
+  onSkip,
+  onUpdateContext
+}) {
+  const [businessName, setBusinessName] = useState(sharedContext?.businessName || '');
+  const [brandColor, setBrandColor] = useState(sharedContext?.brandColor || '#3b82f6');
+  const [style, setStyle] = useState(sharedContext?.style || 'modern');
+  const [logo, setLogo] = useState(sharedContext?.logo || null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const handleLogoDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => setLogo(e.target.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleLogoSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => setLogo(e.target.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleGenerate = () => {
+    if (onUpdateContext) {
+      onUpdateContext({
+        ...sharedContext,
+        businessName,
+        brandColor,
+        style,
+        logo
+      });
+    }
+    onGenerate({
+      businessName,
+      brandColor,
+      style,
+      logo,
+      tool
+    });
+  };
+
+  const toolStyles = {
+    container: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '40px 20px',
+      minHeight: '70vh',
+      maxWidth: '600px',
+      margin: '0 auto'
+    },
+    header: {
+      textAlign: 'center',
+      marginBottom: '32px'
+    },
+    icon: {
+      fontSize: '3rem',
+      marginBottom: '12px'
+    },
+    title: {
+      fontSize: '1.75rem',
+      fontWeight: '700',
+      marginBottom: '8px',
+      color: '#1f2937'
+    },
+    subtitle: {
+      fontSize: '1rem',
+      color: '#6b7280'
+    },
+    form: {
+      width: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '24px'
+    },
+    inputGroup: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '6px'
+    },
+    label: {
+      fontSize: '0.9rem',
+      fontWeight: '500',
+      color: '#374151'
+    },
+    input: {
+      padding: '12px 16px',
+      fontSize: '1rem',
+      border: '2px solid #e5e7eb',
+      borderRadius: '12px',
+      outline: 'none',
+      transition: 'border-color 0.2s ease'
+    },
+    colorSection: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '16px',
+      flexWrap: 'wrap'
+    },
+    colorPicker: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '8px 12px',
+      background: '#f9fafb',
+      borderRadius: '12px',
+      border: '2px solid #e5e7eb'
+    },
+    colorInput: {
+      width: '40px',
+      height: '40px',
+      border: 'none',
+      borderRadius: '8px',
+      cursor: 'pointer'
+    },
+    colorPresets: {
+      display: 'flex',
+      gap: '8px',
+      flexWrap: 'wrap'
+    },
+    colorSwatch: {
+      width: '32px',
+      height: '32px',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      border: '2px solid transparent',
+      transition: 'all 0.2s ease'
+    },
+    colorSwatchSelected: {
+      border: '2px solid #1f2937',
+      transform: 'scale(1.1)'
+    },
+    styleOptions: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(4, 1fr)',
+      gap: '12px'
+    },
+    styleOption: {
+      padding: '14px 10px',
+      background: 'white',
+      border: '2px solid #e5e7eb',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      textAlign: 'center',
+      transition: 'all 0.2s ease',
+      fontSize: '0.9rem',
+      fontWeight: '500'
+    },
+    styleOptionSelected: {
+      borderColor: '#f59e0b',
+      background: '#fffbeb'
+    },
+    logoDropzone: {
+      padding: '20px',
+      border: '2px dashed #d1d5db',
+      borderRadius: '12px',
+      textAlign: 'center',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      background: '#f9fafb'
+    },
+    logoDropzoneActive: {
+      borderColor: '#f59e0b',
+      background: '#fffbeb'
+    },
+    logoPreview: {
+      maxWidth: '100px',
+      maxHeight: '60px',
+      objectFit: 'contain',
+      marginBottom: '8px'
+    },
+    actions: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: '24px',
+      paddingTop: '24px',
+      borderTop: '1px solid #e5e7eb'
+    },
+    backBtn: {
+      padding: '12px 24px',
+      fontSize: '0.95rem',
+      background: 'transparent',
+      border: '2px solid #d1d5db',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      color: '#6b7280',
+      fontWeight: '500'
+    },
+    skipBtn: {
+      padding: '12px 24px',
+      fontSize: '0.95rem',
+      background: 'transparent',
+      border: 'none',
+      cursor: 'pointer',
+      color: '#6b7280',
+      fontWeight: '500',
+      textDecoration: 'underline'
+    },
+    generateBtn: {
+      padding: '14px 28px',
+      fontSize: '1.05rem',
+      fontWeight: '700',
+      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+      color: 'white',
+      border: 'none',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      transition: 'all 0.2s ease',
+      boxShadow: '0 4px 14px rgba(245, 158, 11, 0.4)'
+    }
+  };
+
+  return (
+    <div style={toolStyles.container}>
+      <div style={toolStyles.header}>
+        <div style={toolStyles.icon}>{toolIcon || '🔧'}</div>
+        <h1 style={toolStyles.title}>{toolName || 'Your Tool'}</h1>
+        <p style={toolStyles.subtitle}>Customize your tool (optional)</p>
+      </div>
+
+      <div style={toolStyles.form}>
+        <div style={toolStyles.inputGroup}>
+          <label style={toolStyles.label}>Business Name</label>
+          <input
+            type="text"
+            placeholder="e.g., Sunrise Bakery"
+            value={businessName}
+            onChange={(e) => setBusinessName(e.target.value)}
+            style={toolStyles.input}
+            onFocus={(e) => e.target.style.borderColor = '#f59e0b'}
+            onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
+          />
+        </div>
+
+        <div style={toolStyles.inputGroup}>
+          <label style={toolStyles.label}>Brand Color</label>
+          <div style={toolStyles.colorSection}>
+            <div style={toolStyles.colorPicker}>
+              <input
+                type="color"
+                value={brandColor}
+                onChange={(e) => setBrandColor(e.target.value)}
+                style={toolStyles.colorInput}
+              />
+              <span style={{ fontSize: '0.9rem', color: '#6b7280' }}>{brandColor}</span>
+            </div>
+            <div style={toolStyles.colorPresets}>
+              {COLOR_PRESETS.map((preset) => (
+                <div
+                  key={preset.color}
+                  title={preset.name}
+                  style={{
+                    ...toolStyles.colorSwatch,
+                    background: preset.color,
+                    ...(brandColor === preset.color ? toolStyles.colorSwatchSelected : {})
+                  }}
+                  onClick={() => setBrandColor(preset.color)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div style={toolStyles.inputGroup}>
+          <label style={toolStyles.label}>Style</label>
+          <div style={toolStyles.styleOptions}>
+            {['Modern', 'Minimal', 'Playful', 'Professional'].map((opt) => (
+              <div
+                key={opt.toLowerCase()}
+                style={{
+                  ...toolStyles.styleOption,
+                  ...(style === opt.toLowerCase() ? toolStyles.styleOptionSelected : {})
+                }}
+                onClick={() => setStyle(opt.toLowerCase())}
+              >
+                {opt}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={toolStyles.inputGroup}>
+          <label style={toolStyles.label}>Logo</label>
+          <div
+            style={{
+              ...toolStyles.logoDropzone,
+              ...(dragOver ? toolStyles.logoDropzoneActive : {})
+            }}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleLogoDrop}
+            onClick={() => document.getElementById('tool-logo-input').click()}
+          >
+            {logo ? (
+              <>
+                <img src={logo} alt="Logo preview" style={toolStyles.logoPreview} />
+                <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>Click or drop to replace</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '1.5rem', marginBottom: '6px' }}>📁</div>
+                <div style={{ fontSize: '0.9rem', color: '#6b7280' }}>Drop image or click to browse</div>
+              </>
+            )}
+            <input
+              id="tool-logo-input"
+              type="file"
+              accept="image/*"
+              onChange={handleLogoSelect}
+              style={{ display: 'none' }}
+            />
+          </div>
+        </div>
+
+        <div style={toolStyles.actions}>
+          <button style={toolStyles.backBtn} onClick={onBack}>
+            ← Back
+          </button>
+          <button style={toolStyles.skipBtn} onClick={onSkip}>
+            Skip Customization
+          </button>
+          <button style={toolStyles.generateBtn} onClick={handleGenerate}>
+            ⚡ BLINK →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// RECOMMENDED TOOLS SCREEN
+// ============================================
+function RecommendedToolsScreen({ recommendations, industry, onSelectTool, onSelectMultiple, onBack, loading, onBuildSite, sharedContext }) {
+  const [selectedTools, setSelectedTools] = useState([]);
+
+  const toggleTool = (toolType) => {
+    setSelectedTools(prev =>
+      prev.includes(toolType)
+        ? prev.filter(t => t !== toolType)
+        : [...prev, toolType]
+    );
+  };
+
+  const handleBuildSelected = () => {
+    if (selectedTools.length === 1) {
+      onSelectTool(selectedTools[0]);
+    } else if (selectedTools.length > 1) {
+      onSelectMultiple(selectedTools);
+    }
+  };
+
+  const recStyles = {
+    container: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '40px 20px',
+      minHeight: '70vh'
+    },
+    header: {
+      textAlign: 'center',
+      marginBottom: '40px'
+    },
+    title: {
+      fontSize: '2rem',
+      fontWeight: '700',
+      marginBottom: '8px',
+      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent'
+    },
+    subtitle: {
+      fontSize: '1rem',
+      color: '#666'
+    },
+    industryBadge: {
+      display: 'inline-block',
+      padding: '8px 16px',
+      background: '#fef3c7',
+      borderRadius: '8px',
+      fontSize: '0.9rem',
+      color: '#92400e',
+      marginTop: '12px'
+    },
+    grid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+      gap: '20px',
+      width: '100%',
+      maxWidth: '900px',
+      marginBottom: '32px'
+    },
+    card: {
+      display: 'flex',
+      flexDirection: 'column',
+      padding: '24px',
+      background: 'white',
+      border: '2px solid #e2e8f0',
+      borderRadius: '16px',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease'
+    },
+    cardSelected: {
+      borderColor: '#f59e0b',
+      background: '#fffbeb',
+      boxShadow: '0 4px 12px rgba(245, 158, 11, 0.15)'
+    },
+    cardHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      marginBottom: '12px'
+    },
+    cardIcon: {
+      fontSize: '2rem'
+    },
+    cardTitle: {
+      fontSize: '1.1rem',
+      fontWeight: '600',
+      color: '#1f2937'
+    },
+    cardDescription: {
+      fontSize: '0.9rem',
+      color: '#6b7280',
+      lineHeight: '1.5',
+      flex: 1
+    },
+    cardFooter: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: '16px',
+      paddingTop: '16px',
+      borderTop: '1px solid #f1f5f9'
+    },
+    buildBtn: {
+      padding: '8px 16px',
+      fontSize: '0.85rem',
+      background: '#f59e0b',
+      color: 'white',
+      border: 'none',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      fontWeight: '600'
+    },
+    checkbox: {
+      width: '22px',
+      height: '22px',
+      accentColor: '#f59e0b'
+    },
+    actions: {
+      display: 'flex',
+      gap: '16px',
+      marginTop: '16px'
+    },
+    backBtn: {
+      padding: '12px 24px',
+      fontSize: '0.95rem',
+      background: 'transparent',
+      border: '1px solid #ddd',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      color: '#666'
+    },
+    buildSelectedBtn: {
+      padding: '12px 32px',
+      fontSize: '0.95rem',
+      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+      color: 'white',
+      border: 'none',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      fontWeight: '600',
+      opacity: selectedTools.length === 0 ? 0.5 : 1
+    },
+    loading: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '16px',
+      padding: '60px'
+    },
+    spinner: {
+      width: '40px',
+      height: '40px',
+      border: '3px solid #f3f3f3',
+      borderTop: '3px solid #f59e0b',
+      borderRadius: '50%',
+      animation: 'spin 1s linear infinite'
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={recStyles.container}>
+        <div style={recStyles.loading}>
+          <div style={recStyles.spinner} />
+          <p>Finding the best tools for you...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={recStyles.container}>
+      <div style={recStyles.header}>
+        <h1 style={recStyles.title}>Recommended Tools</h1>
+        <p style={recStyles.subtitle}>
+          Select one or more tools to build
+        </p>
+        {industry && (
+          <span style={recStyles.industryBadge}>
+            For: {industry.charAt(0).toUpperCase() + industry.slice(1)}
+          </span>
+        )}
+      </div>
+
+      <div style={recStyles.grid}>
+        {recommendations.map((tool, index) => (
+          <div
+            key={tool.toolType || index}
+            style={{
+              ...recStyles.card,
+              ...(selectedTools.includes(tool.toolType) ? recStyles.cardSelected : {})
+            }}
+            onClick={() => toggleTool(tool.toolType)}
+          >
+            <div style={recStyles.cardHeader}>
+              <span style={recStyles.cardIcon}>{tool.icon || '🛠️'}</span>
+              <span style={recStyles.cardTitle}>{tool.name}</span>
+            </div>
+            <p style={recStyles.cardDescription}>{tool.description}</p>
+            <div style={recStyles.cardFooter}>
+              <input
+                type="checkbox"
+                checked={selectedTools.includes(tool.toolType)}
+                onChange={() => toggleTool(tool.toolType)}
+                style={recStyles.checkbox}
+                onClick={(e) => e.stopPropagation()}
+              />
+              <button
+                style={recStyles.buildBtn}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectTool(tool.toolType, tool.name);
+                }}
+              >
+                Build This
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={recStyles.actions}>
+        <button style={recStyles.backBtn} onClick={onBack}>
+          ← Back
+        </button>
+        {selectedTools.length > 0 && (
+          <button
+            style={recStyles.buildSelectedBtn}
+            onClick={handleBuildSelected}
+            disabled={selectedTools.length === 0}
+          >
+            Build {selectedTools.length} Tool{selectedTools.length !== 1 ? 's' : ''}
+          </button>
+        )}
+      </div>
+
+      {/* Cross-link to website */}
+      {onBuildSite && (
+        <div style={{
+          marginTop: '40px',
+          paddingTop: '24px',
+          borderTop: '1px solid #e5e7eb',
+          textAlign: 'center',
+          width: '100%',
+          maxWidth: '600px'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            padding: '20px',
+            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+            borderRadius: '16px',
+            border: '1px solid #bfdbfe'
+          }}>
+            <span style={{ fontSize: '1.5rem' }}>🌐</span>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>
+                Want a full website for your {industry || 'business'} too?
+              </div>
+              <button
+                onClick={onBuildSite}
+                style={{
+                  padding: '8px 20px',
+                  fontSize: '0.9rem',
+                  fontWeight: '600',
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  marginTop: '8px'
+                }}
+              >
+                Build Website →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// TOOL SUITE BUILDER SCREEN
+// ============================================
+function ToolSuiteBuilderScreen({ selectedTools, recommendations, industry, onBuild, onBack }) {
+  const [businessName, setBusinessName] = useState(industry ? `${industry.charAt(0).toUpperCase() + industry.slice(1)} Tools` : 'My Tool Suite');
+  const [stylePreset, setStylePreset] = useState('modern');
+  const [primaryColor, setPrimaryColor] = useState('#6366f1');
+  const [organization, setOrganization] = useState('auto');
+  const [toolOrder, setToolOrder] = useState(selectedTools);
+  const [building, setBuilding] = useState(false);
+  const [suiteResult, setSuiteResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [showPreview, setShowPreview] = useState(true);
+
+  // Get full tool info from recommendations
+  const tools = toolOrder.map(toolType => {
+    const rec = recommendations.find(r => r.toolType === toolType);
+    return rec || { toolType, name: toolType, icon: '🔧', description: '' };
+  });
+
+  const moveToolUp = (index) => {
+    if (index <= 0) return;
+    const newOrder = [...toolOrder];
+    [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+    setToolOrder(newOrder);
+  };
+
+  const moveToolDown = (index) => {
+    if (index >= toolOrder.length - 1) return;
+    const newOrder = [...toolOrder];
+    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+    setToolOrder(newOrder);
+  };
+
+  const removeTool = (toolType) => {
+    setToolOrder(prev => prev.filter(t => t !== toolType));
+  };
+
+  const handleBuildSuite = async () => {
+    if (toolOrder.length < 2) {
+      setError('At least 2 tools required for a suite');
+      return;
+    }
+
+    setBuilding(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/orchestrate/build-suite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tools: tools.map(t => ({
+            toolType: t.toolType,
+            name: t.name,
+            icon: t.icon,
+            description: t.description,
+            category: t.category
+          })),
+          branding: {
+            businessName,
+            colors: { primary: primaryColor, accent: primaryColor },
+            style: stylePreset
+          },
+          options: {
+            organization: organization === 'auto' ? null : organization,
+            toolOrder
+          }
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setSuiteResult(data);
+        onBuild(data);
+      } else {
+        setError(data.error || 'Failed to build suite');
+      }
+    } catch (err) {
+      setError(`Build failed: ${err.message}`);
+    } finally {
+      setBuilding(false);
+    }
+  };
+
+  // Determine suggested organization
+  const suggestedOrg = toolOrder.length <= 4 ? 'tabbed' : toolOrder.length <= 8 ? 'grid' : 'sidebar';
+
+  const suiteStyles = {
+    container: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '40px 20px',
+      minHeight: '70vh'
+    },
+    header: {
+      textAlign: 'center',
+      marginBottom: '32px'
+    },
+    title: {
+      fontSize: '2rem',
+      fontWeight: '700',
+      marginBottom: '8px',
+      background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent'
+    },
+    subtitle: {
+      fontSize: '1rem',
+      color: '#666'
+    },
+    content: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: '32px',
+      width: '100%',
+      maxWidth: '1000px'
+    },
+    section: {
+      background: 'white',
+      borderRadius: '16px',
+      padding: '24px',
+      border: '1px solid #e2e8f0'
+    },
+    sectionTitle: {
+      fontSize: '1.1rem',
+      fontWeight: '600',
+      marginBottom: '16px',
+      color: '#1f2937'
+    },
+    formGroup: {
+      marginBottom: '20px'
+    },
+    label: {
+      display: 'block',
+      fontSize: '0.9rem',
+      fontWeight: '500',
+      marginBottom: '8px',
+      color: '#4b5563'
+    },
+    input: {
+      width: '100%',
+      padding: '12px',
+      fontSize: '0.95rem',
+      border: '1px solid #d1d5db',
+      borderRadius: '8px',
+      outline: 'none'
+    },
+    select: {
+      width: '100%',
+      padding: '12px',
+      fontSize: '0.95rem',
+      border: '1px solid #d1d5db',
+      borderRadius: '8px',
+      outline: 'none',
+      background: 'white'
+    },
+    colorPicker: {
+      display: 'flex',
+      gap: '12px',
+      alignItems: 'center'
+    },
+    colorInput: {
+      width: '50px',
+      height: '40px',
+      padding: '2px',
+      border: '1px solid #d1d5db',
+      borderRadius: '8px',
+      cursor: 'pointer'
+    },
+    colorPresets: {
+      display: 'flex',
+      gap: '8px'
+    },
+    colorPreset: {
+      width: '32px',
+      height: '32px',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      border: '2px solid transparent'
+    },
+    toolList: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px'
+    },
+    toolItem: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      padding: '12px',
+      background: '#f8fafc',
+      borderRadius: '10px',
+      border: '1px solid #e2e8f0'
+    },
+    toolIcon: {
+      fontSize: '1.5rem'
+    },
+    toolInfo: {
+      flex: 1
+    },
+    toolName: {
+      fontWeight: '600',
+      fontSize: '0.95rem'
+    },
+    toolDesc: {
+      fontSize: '0.8rem',
+      color: '#666'
+    },
+    toolActions: {
+      display: 'flex',
+      gap: '4px'
+    },
+    toolBtn: {
+      padding: '6px 8px',
+      background: '#e2e8f0',
+      border: 'none',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '0.8rem'
+    },
+    removeBtn: {
+      padding: '6px 8px',
+      background: '#fee2e2',
+      color: '#dc2626',
+      border: 'none',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '0.8rem'
+    },
+    orgOptions: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px'
+    },
+    orgOption: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      padding: '12px',
+      background: '#f8fafc',
+      borderRadius: '10px',
+      border: '2px solid #e2e8f0',
+      cursor: 'pointer'
+    },
+    orgOptionSelected: {
+      borderColor: '#8b5cf6',
+      background: '#f5f3ff'
+    },
+    orgRadio: {
+      width: '18px',
+      height: '18px',
+      accentColor: '#8b5cf6'
+    },
+    orgLabel: {
+      flex: 1
+    },
+    orgTitle: {
+      fontWeight: '600',
+      fontSize: '0.9rem'
+    },
+    orgDesc: {
+      fontSize: '0.8rem',
+      color: '#666'
+    },
+    actions: {
+      display: 'flex',
+      justifyContent: 'center',
+      gap: '16px',
+      marginTop: '32px',
+      width: '100%',
+      maxWidth: '1000px'
+    },
+    backBtn: {
+      padding: '14px 28px',
+      fontSize: '0.95rem',
+      background: 'transparent',
+      border: '1px solid #ddd',
+      borderRadius: '10px',
+      cursor: 'pointer',
+      color: '#666'
+    },
+    buildBtn: {
+      padding: '14px 40px',
+      fontSize: '1rem',
+      background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
+      color: 'white',
+      border: 'none',
+      borderRadius: '10px',
+      cursor: 'pointer',
+      fontWeight: '600',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    },
+    buildBtnDisabled: {
+      opacity: 0.6,
+      cursor: 'not-allowed'
+    },
+    error: {
+      color: '#dc2626',
+      background: '#fee2e2',
+      padding: '12px 16px',
+      borderRadius: '8px',
+      marginBottom: '16px',
+      fontSize: '0.9rem'
+    },
+    building: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '16px',
+      padding: '60px'
+    },
+    spinner: {
+      width: '50px',
+      height: '50px',
+      border: '3px solid #f3f3f3',
+      borderTop: '3px solid #8b5cf6',
+      borderRadius: '50%',
+      animation: 'spin 1s linear infinite'
+    }
+  };
+
+  const colorPresets = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#1f2937'];
+
+  if (building) {
+    return (
+      <div style={suiteStyles.container}>
+        <div style={suiteStyles.building}>
+          <div style={suiteStyles.spinner} />
+          <h2>Building Your Tool Suite</h2>
+          <p style={{ color: '#666' }}>Generating {toolOrder.length} tools with shared branding...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={suiteStyles.container}>
+      <div style={suiteStyles.header}>
+        <h1 style={suiteStyles.title}>🧰 Build Tool Suite</h1>
+        <p style={suiteStyles.subtitle}>
+          Customize your {toolOrder.length}-tool suite with unified branding
+        </p>
+      </div>
+
+      {error && <div style={suiteStyles.error}>{error}</div>}
+
+      <div style={suiteStyles.content}>
+        {/* Left Column - Branding */}
+        <div style={suiteStyles.section}>
+          <h3 style={suiteStyles.sectionTitle}>✨ Branding</h3>
+
+          <div style={suiteStyles.formGroup}>
+            <label style={suiteStyles.label}>Business/Suite Name</label>
+            <input
+              type="text"
+              style={suiteStyles.input}
+              value={businessName}
+              onChange={(e) => setBusinessName(e.target.value)}
+              placeholder="My Business Tools"
+            />
+          </div>
+
+          <div style={suiteStyles.formGroup}>
+            <label style={suiteStyles.label}>Brand Color</label>
+            <div style={suiteStyles.colorPicker}>
+              <input
+                type="color"
+                style={suiteStyles.colorInput}
+                value={primaryColor}
+                onChange={(e) => setPrimaryColor(e.target.value)}
+              />
+              <div style={suiteStyles.colorPresets}>
+                {colorPresets.map(color => (
+                  <div
+                    key={color}
+                    style={{
+                      ...suiteStyles.colorPreset,
+                      background: color,
+                      borderColor: primaryColor === color ? '#333' : 'transparent'
+                    }}
+                    onClick={() => setPrimaryColor(color)}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div style={suiteStyles.formGroup}>
+            <label style={suiteStyles.label}>Style Preset</label>
+            <select
+              style={suiteStyles.select}
+              value={stylePreset}
+              onChange={(e) => setStylePreset(e.target.value)}
+            >
+              <option value="modern">Modern - Rounded, subtle shadows</option>
+              <option value="minimal">Minimal - Clean, light borders</option>
+              <option value="playful">Playful - Bold, rounded corners</option>
+              <option value="professional">Professional - Sharp, conservative</option>
+            </select>
+          </div>
+
+          <div style={suiteStyles.formGroup}>
+            <label style={suiteStyles.label}>Layout Organization</label>
+            <div style={suiteStyles.orgOptions}>
+              <div
+                style={{
+                  ...suiteStyles.orgOption,
+                  ...(organization === 'auto' ? suiteStyles.orgOptionSelected : {})
+                }}
+                onClick={() => setOrganization('auto')}
+              >
+                <input
+                  type="radio"
+                  checked={organization === 'auto'}
+                  onChange={() => setOrganization('auto')}
+                  style={suiteStyles.orgRadio}
+                />
+                <div style={suiteStyles.orgLabel}>
+                  <div style={suiteStyles.orgTitle}>Auto ({suggestedOrg})</div>
+                  <div style={suiteStyles.orgDesc}>Best layout for {toolOrder.length} tools</div>
+                </div>
+              </div>
+              <div
+                style={{
+                  ...suiteStyles.orgOption,
+                  ...(organization === 'tabbed' ? suiteStyles.orgOptionSelected : {})
+                }}
+                onClick={() => setOrganization('tabbed')}
+              >
+                <input
+                  type="radio"
+                  checked={organization === 'tabbed'}
+                  onChange={() => setOrganization('tabbed')}
+                  style={suiteStyles.orgRadio}
+                />
+                <div style={suiteStyles.orgLabel}>
+                  <div style={suiteStyles.orgTitle}>Tabbed (All-in-One)</div>
+                  <div style={suiteStyles.orgDesc}>Single page with tabs, best for 2-4 tools</div>
+                </div>
+              </div>
+              <div
+                style={{
+                  ...suiteStyles.orgOption,
+                  ...(organization === 'grid' ? suiteStyles.orgOptionSelected : {})
+                }}
+                onClick={() => setOrganization('grid')}
+              >
+                <input
+                  type="radio"
+                  checked={organization === 'grid'}
+                  onChange={() => setOrganization('grid')}
+                  style={suiteStyles.orgRadio}
+                />
+                <div style={suiteStyles.orgLabel}>
+                  <div style={suiteStyles.orgTitle}>Grid Index</div>
+                  <div style={suiteStyles.orgDesc}>Dashboard with separate pages, best for 5-8 tools</div>
+                </div>
+              </div>
+              <div
+                style={{
+                  ...suiteStyles.orgOption,
+                  ...(organization === 'sidebar' ? suiteStyles.orgOptionSelected : {})
+                }}
+                onClick={() => setOrganization('sidebar')}
+              >
+                <input
+                  type="radio"
+                  checked={organization === 'sidebar'}
+                  onChange={() => setOrganization('sidebar')}
+                  style={suiteStyles.orgRadio}
+                />
+                <div style={suiteStyles.orgLabel}>
+                  <div style={suiteStyles.orgTitle}>Sidebar Navigation</div>
+                  <div style={suiteStyles.orgDesc}>Categorized sidebar, best for 9+ tools</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column - Tool Selection */}
+        <div style={suiteStyles.section}>
+          <h3 style={suiteStyles.sectionTitle}>🛠️ Tools ({toolOrder.length})</h3>
+          <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '16px' }}>
+            Drag to reorder, or use arrows
+          </p>
+
+          <div style={suiteStyles.toolList}>
+            {tools.map((tool, index) => (
+              <div key={tool.toolType} style={suiteStyles.toolItem}>
+                <span style={suiteStyles.toolIcon}>{tool.icon || '🔧'}</span>
+                <div style={suiteStyles.toolInfo}>
+                  <div style={suiteStyles.toolName}>{tool.name}</div>
+                  <div style={suiteStyles.toolDesc}>{tool.description?.substring(0, 50)}...</div>
+                </div>
+                <div style={suiteStyles.toolActions}>
+                  <button
+                    style={suiteStyles.toolBtn}
+                    onClick={() => moveToolUp(index)}
+                    disabled={index === 0}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    style={suiteStyles.toolBtn}
+                    onClick={() => moveToolDown(index)}
+                    disabled={index === tools.length - 1}
+                  >
+                    ↓
+                  </button>
+                  {toolOrder.length > 2 && (
+                    <button
+                      style={suiteStyles.removeBtn}
+                      onClick={() => removeTool(tool.toolType)}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={suiteStyles.actions}>
+        <button style={suiteStyles.backBtn} onClick={onBack}>
+          ← Back to Selection
+        </button>
+        <button
+          style={{
+            ...suiteStyles.buildBtn,
+            ...(toolOrder.length < 2 ? suiteStyles.buildBtnDisabled : {})
+          }}
+          onClick={handleBuildSuite}
+          disabled={toolOrder.length < 2}
+        >
+          🧰 Build Suite ({toolOrder.length} tools)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// SUITE COMPLETE SCREEN
+// ============================================
+function SuiteCompleteScreen({ suiteResult, onReset, onBuildAnother }) {
+  const [copied, setCopied] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
+
+  const suite = suiteResult?.suite || {};
+  const html = suiteResult?.html || '';
+  const projectPath = suiteResult?.project?.path;
+  const zipFilename = suiteResult?.zipFilename;
+
+  // Create blob URL for iframe preview
+  const previewUrl = html ? URL.createObjectURL(new Blob([html], { type: 'text/html' })) : null;
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const handleDownloadZip = () => {
+    if (!suiteResult?.project?.name) return;
+    window.open(`${API_BASE}/api/orchestrate/download-suite/${suiteResult.project.name}`, '_blank');
+  };
+
+  const handleCopyCode = async () => {
+    if (!html) return;
+    try {
+      await navigator.clipboard.writeText(html);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const handleOpenFolder = async () => {
+    if (!projectPath) return;
+    try {
+      await fetch(`${API_BASE}/api/open-folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: projectPath })
+      });
+    } catch (err) {
+      console.error('Failed to open folder:', err);
+    }
+  };
+
+  const scStyles = {
+    container: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '40px 20px',
+      minHeight: '80vh'
+    },
+    header: {
+      textAlign: 'center',
+      marginBottom: '32px'
+    },
+    icon: {
+      fontSize: '4rem',
+      marginBottom: '16px'
+    },
+    title: {
+      fontSize: '2rem',
+      fontWeight: '700',
+      marginBottom: '8px',
+      background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent'
+    },
+    subtitle: {
+      fontSize: '1rem',
+      color: '#666'
+    },
+    suiteInfo: {
+      display: 'flex',
+      gap: '16px',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      marginBottom: '24px'
+    },
+    infoBadge: {
+      padding: '8px 16px',
+      background: '#f5f3ff',
+      borderRadius: '8px',
+      fontSize: '0.85rem',
+      color: '#6d28d9'
+    },
+    toolsList: {
+      display: 'flex',
+      gap: '8px',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      marginBottom: '24px'
+    },
+    toolChip: {
+      padding: '6px 12px',
+      background: '#f8fafc',
+      border: '1px solid #e2e8f0',
+      borderRadius: '20px',
+      fontSize: '0.85rem',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px'
+    },
+    previewSection: {
+      width: '100%',
+      maxWidth: '900px',
+      marginBottom: '32px'
+    },
+    previewHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '16px'
+    },
+    previewLabel: {
+      fontSize: '0.9rem',
+      fontWeight: '600',
+      color: '#333'
+    },
+    previewToggle: {
+      padding: '6px 12px',
+      fontSize: '0.8rem',
+      background: '#f1f5f9',
+      border: '1px solid #e2e8f0',
+      borderRadius: '6px',
+      cursor: 'pointer'
+    },
+    previewFrame: {
+      width: '100%',
+      height: '500px',
+      border: '2px solid #e2e8f0',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      background: 'white'
+    },
+    iframe: {
+      width: '100%',
+      height: '100%',
+      border: 'none'
+    },
+    actionsGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, 1fr)',
+      gap: '16px',
+      width: '100%',
+      maxWidth: '600px',
+      marginBottom: '32px'
+    },
+    actionCard: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '24px 16px',
+      background: 'white',
+      border: '2px solid #e2e8f0',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease'
+    },
+    actionIcon: {
+      fontSize: '2rem',
+      marginBottom: '8px'
+    },
+    actionLabel: {
+      fontSize: '0.9rem',
+      fontWeight: '600',
+      color: '#333'
+    },
+    actionHint: {
+      fontSize: '0.75rem',
+      color: '#888',
+      marginTop: '4px'
+    },
+    secondaryActions: {
+      display: 'flex',
+      gap: '12px',
+      marginTop: '16px'
+    },
+    secondaryBtn: {
+      padding: '10px 20px',
+      fontSize: '0.9rem',
+      background: 'transparent',
+      border: '1px solid #ddd',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      color: '#666'
+    },
+    primaryBtn: {
+      padding: '10px 24px',
+      fontSize: '0.9rem',
+      background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
+      border: 'none',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      color: 'white',
+      fontWeight: '600'
+    }
+  };
+
+  return (
+    <div style={scStyles.container}>
+      <div style={scStyles.header}>
+        <div style={scStyles.icon}>🧰</div>
+        <h1 style={scStyles.title}>{suite.businessName || 'Tool Suite'} is Ready!</h1>
+        <p style={scStyles.subtitle}>
+          Your {suite.toolCount}-tool suite with {suite.organization} layout
+        </p>
+      </div>
+
+      <div style={scStyles.suiteInfo}>
+        <span style={scStyles.infoBadge}>
+          {suite.toolCount} Tools
+        </span>
+        <span style={scStyles.infoBadge}>
+          Layout: {suite.organization}
+        </span>
+        <span style={scStyles.infoBadge}>
+          {suiteResult?.files?.length || 0} Files
+        </span>
+      </div>
+
+      <div style={scStyles.toolsList}>
+        {suite.tools?.map((tool, i) => (
+          <span key={i} style={scStyles.toolChip}>
+            <span>{tool.icon}</span>
+            {tool.name}
+          </span>
+        ))}
+      </div>
+
+      {html && (
+        <div style={scStyles.previewSection}>
+          <div style={scStyles.previewHeader}>
+            <span style={scStyles.previewLabel}>Live Preview (Index Page)</span>
+            <button
+              style={scStyles.previewToggle}
+              onClick={() => setShowPreview(!showPreview)}
+            >
+              {showPreview ? 'Hide' : 'Show'} Preview
+            </button>
+          </div>
+          {showPreview && previewUrl && (
+            <div style={scStyles.previewFrame}>
+              <iframe
+                src={previewUrl}
+                style={scStyles.iframe}
+                title="Suite Preview"
+                sandbox="allow-scripts allow-forms"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={scStyles.actionsGrid}>
+        {zipFilename && (
+          <div
+            style={scStyles.actionCard}
+            onClick={handleDownloadZip}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#8b5cf6';
+              e.currentTarget.style.transform = 'translateY(-2px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = '#e2e8f0';
+              e.currentTarget.style.transform = 'none';
+            }}
+          >
+            <span style={scStyles.actionIcon}>📦</span>
+            <span style={scStyles.actionLabel}>Download ZIP</span>
+            <span style={scStyles.actionHint}>All files packaged</span>
+          </div>
+        )}
+
+        <div
+          style={scStyles.actionCard}
+          onClick={handleCopyCode}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#8b5cf6';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#e2e8f0';
+            e.currentTarget.style.transform = 'none';
+          }}
+        >
+          <span style={scStyles.actionIcon}>{copied ? '✅' : '📋'}</span>
+          <span style={scStyles.actionLabel}>{copied ? 'Copied!' : 'Copy Index'}</span>
+          <span style={scStyles.actionHint}>Index HTML</span>
+        </div>
+
+        {projectPath && (
+          <div
+            style={scStyles.actionCard}
+            onClick={handleOpenFolder}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#8b5cf6';
+              e.currentTarget.style.transform = 'translateY(-2px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = '#e2e8f0';
+              e.currentTarget.style.transform = 'none';
+            }}
+          >
+            <span style={scStyles.actionIcon}>📂</span>
+            <span style={scStyles.actionLabel}>Open Folder</span>
+            <span style={scStyles.actionHint}>View all files</span>
+          </div>
+        )}
+      </div>
+
+      <div style={scStyles.secondaryActions}>
+        <button style={scStyles.secondaryBtn} onClick={onReset}>
+          ← Back to Home
+        </button>
+        <button style={scStyles.primaryBtn} onClick={onBuildAnother}>
+          + Build Another Suite
+        </button>
+      </div>
     </div>
   );
 }
@@ -5928,7 +11199,7 @@ function CompleteStep({ result, projectData, onReset, blinkCount, onDeploy, depl
 // ============================================
 // DEPLOYING STEP
 // ============================================
-function DeployingStep({ status, projectName, startTime, onCancel }) {
+function DeployingStep({ status, projectName, startTime, onCancel, railwayServices }) {
   const [dots, setDots] = useState('');
   const [elapsedTime, setElapsedTime] = useState(0);
 
@@ -5958,14 +11229,37 @@ function DeployingStep({ status, projectName, startTime, onCancel }) {
     return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
   };
 
-  // Calculate remaining time (estimated 90 seconds total)
+  // Get progress from status object (0-100)
+  const progress = typeof status === 'object' ? (status.progress || 0) : 0;
+
+  // Calculate remaining time based on progress (estimated 90 seconds total)
   const estimatedTotal = 90;
-  const remaining = Math.max(0, estimatedTotal - elapsedTime);
+  const estimatedRemaining = progress > 0
+    ? Math.max(0, Math.round((100 - progress) / progress * elapsedTime))
+    : estimatedTotal - elapsedTime;
 
   // Get current status display
   const statusDisplay = typeof status === 'object'
-    ? `${status.icon} ${status.status}`
+    ? `${status.icon || '🚀'} ${status.status || 'Deploying...'}`
     : (status || 'Initializing...');
+
+  // Service card display helper
+  const getServiceStatus = (service) => {
+    if (!service) return { icon: '⏳', label: 'Pending', color: '#666' };
+    if (service.isDeployed) return { icon: '✅', label: 'Online', color: '#22c55e' };
+    if (service.isFailed) return { icon: '❌', label: 'Failed', color: '#ef4444' };
+    if (service.isBuilding) return { icon: '🔨', label: 'Building', color: '#f59e0b' };
+    if (service.status === 'DEPLOYING') return { icon: '🚀', label: 'Deploying', color: '#3b82f6' };
+    return { icon: '⏳', label: service.status || 'Pending', color: '#666' };
+  };
+
+  // Service cards configuration
+  const serviceCards = [
+    { key: 'postgres', name: 'Database', icon: '🗄️' },
+    { key: 'backend', name: 'Backend', icon: '⚙️' },
+    { key: 'frontend', name: 'Frontend', icon: '🌐' },
+    { key: 'admin', name: 'Admin', icon: '🔧' }
+  ];
 
   return (
     <div style={styles.deployingContainer}>
@@ -5973,10 +11267,46 @@ function DeployingStep({ status, projectName, startTime, onCancel }) {
       <h2 style={styles.deployingTitle}>Deploying {projectName}{dots}</h2>
       <p style={styles.deployingSubtitle}>Your site is going live on the internet</p>
 
+      {/* Progress Bar */}
+      <div style={deployStepStyles.progressContainer}>
+        <div style={deployStepStyles.progressBar}>
+          <div style={{
+            ...deployStepStyles.progressFill,
+            width: `${progress}%`
+          }} />
+        </div>
+        <span style={deployStepStyles.progressText}>{progress}%</span>
+      </div>
+
       <div style={styles.deployingStatusCard}>
         <div style={styles.deployingSpinner}></div>
         <span style={styles.deployingStatus}>{statusDisplay}</span>
       </div>
+
+      {/* Railway Services Status Grid */}
+      {railwayServices && (
+        <div style={deployStepStyles.servicesGrid}>
+          <p style={deployStepStyles.servicesTitle}>Service Status:</p>
+          <div style={deployStepStyles.servicesCards}>
+            {serviceCards.map(({ key, name, icon }) => {
+              const service = railwayServices[key];
+              const status = getServiceStatus(service);
+              return (
+                <div key={key} style={{
+                  ...deployStepStyles.serviceCard,
+                  borderColor: status.color
+                }}>
+                  <div style={deployStepStyles.serviceIcon}>{icon}</div>
+                  <div style={deployStepStyles.serviceName}>{name}</div>
+                  <div style={{ ...deployStepStyles.serviceStatus, color: status.color }}>
+                    {status.icon} {status.label}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div style={styles.deployingTimeline}>
         <div style={styles.timelineItem}>
@@ -5985,22 +11315,7 @@ function DeployingStep({ status, projectName, startTime, onCancel }) {
         </div>
         <div style={styles.timelineItem}>
           <span style={styles.timelineIcon}>🎯</span>
-          <span>~{formatTime(remaining)} remaining</span>
-        </div>
-      </div>
-
-      <div style={styles.deployingSteps}>
-        <p style={styles.stepsTitle}>What's happening:</p>
-        <div style={styles.stepsList}>
-          <span>📦 GitHub repo</span>
-          <span>→</span>
-          <span>🚂 Railway project</span>
-          <span>→</span>
-          <span>🗄️ Database</span>
-          <span>→</span>
-          <span>🌐 DNS</span>
-          <span>→</span>
-          <span>✅ Live!</span>
+          <span>~{formatTime(Math.max(0, estimatedRemaining))} remaining</span>
         </div>
       </div>
 
@@ -6018,6 +11333,33 @@ function DeployingStep({ status, projectName, startTime, onCancel }) {
 }
 
 const deployStepStyles = {
+  progressContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    width: '100%',
+    maxWidth: '400px',
+    margin: '20px auto'
+  },
+  progressBar: {
+    flex: 1,
+    height: '8px',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: '4px',
+    overflow: 'hidden'
+  },
+  progressFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #6366f1, #22c55e)',
+    borderRadius: '4px',
+    transition: 'width 0.3s ease'
+  },
+  progressText: {
+    color: '#22c55e',
+    fontWeight: 600,
+    fontSize: '14px',
+    minWidth: '40px'
+  },
   cancelBtn: {
     marginTop: '24px',
     padding: '12px 32px',
@@ -6028,6 +11370,55 @@ const deployStepStyles = {
     fontSize: '14px',
     cursor: 'pointer',
     transition: 'all 0.2s ease'
+  },
+  // Service status grid styles
+  servicesGrid: {
+    width: '100%',
+    maxWidth: '500px',
+    margin: '24px auto 0',
+    padding: '20px',
+    background: 'rgba(255,255,255,0.03)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255,255,255,0.08)'
+  },
+  servicesTitle: {
+    color: '#888',
+    fontSize: '14px',
+    marginBottom: '16px',
+    textAlign: 'center',
+    fontWeight: 500
+  },
+  servicesCards: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '12px'
+  },
+  serviceCard: {
+    background: 'rgba(0,0,0,0.3)',
+    borderRadius: '10px',
+    padding: '16px',
+    border: '2px solid',
+    borderColor: 'rgba(255,255,255,0.1)',
+    transition: 'all 0.3s ease',
+    textAlign: 'center'
+  },
+  serviceIcon: {
+    fontSize: '24px',
+    marginBottom: '8px'
+  },
+  serviceName: {
+    color: '#fff',
+    fontSize: '14px',
+    fontWeight: 600,
+    marginBottom: '6px'
+  },
+  serviceStatus: {
+    fontSize: '12px',
+    fontWeight: 500,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '4px'
   }
 };
 
@@ -6340,7 +11731,7 @@ const styles = {
   // Step container
   stepContainer: {
     width: '100%',
-    maxWidth: '800px',
+    maxWidth: '1100px',
   },
   
   // Hero titles
@@ -6363,9 +11754,10 @@ const styles = {
   // Path selection
   pathGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
     gap: '20px',
     marginBottom: '32px',
+    maxWidth: '1100px',
   },
   pathCard: {
     background: 'rgba(255,255,255,0.03)',
@@ -6408,6 +11800,22 @@ const styles = {
     fontSize: '11px',
     fontWeight: '700',
   },
+  pathCardOrchestrator: {
+    background: 'rgba(102, 126, 234, 0.08)',
+    borderColor: 'rgba(102, 126, 234, 0.4)',
+  },
+  newBadge: {
+    position: 'absolute',
+    top: '-10px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: 'linear-gradient(135deg, #667eea, #764ba2)',
+    color: '#fff',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: '700',
+  },
   pathIcon: {
     fontSize: '48px',
     marginBottom: '16px',
@@ -6438,7 +11846,77 @@ const styles = {
     color: '#666',
     fontSize: '14px',
   },
-  
+
+  // Section containers (Build a Business / Build a Tool)
+  sectionContainer: {
+    marginBottom: '48px',
+  },
+  sectionTitle: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  sectionIcon: {
+    fontSize: '24px',
+  },
+  sectionSubtitle: {
+    fontSize: '14px',
+    color: '#888',
+    marginBottom: '20px',
+  },
+
+  // Tool cards grid
+  toolGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gap: '16px',
+    maxWidth: '1100px',
+  },
+  toolCard: {
+    background: 'rgba(255,255,255,0.03)',
+    border: '2px solid rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    padding: '20px 16px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    textAlign: 'center',
+    position: 'relative',
+  },
+  toolCardCustom: {
+    background: 'rgba(168, 85, 247, 0.08)',
+    borderColor: 'rgba(168, 85, 247, 0.3)',
+  },
+  toolIcon: {
+    fontSize: '36px',
+    marginBottom: '12px',
+  },
+  toolName: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: '6px',
+  },
+  toolDesc: {
+    fontSize: '12px',
+    color: '#888',
+    lineHeight: '1.4',
+  },
+  customBadge: {
+    position: 'absolute',
+    top: '-8px',
+    right: '-8px',
+    background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+    color: '#fff',
+    padding: '3px 8px',
+    borderRadius: '8px',
+    fontSize: '9px',
+    fontWeight: '700',
+  },
+
   // Back button
   backBtn: {
     background: 'transparent',
@@ -7284,7 +12762,9 @@ const styles = {
   },
   previewFrame: {
     background: '#fff',
-    minHeight: '400px',
+    minHeight: '500px',
+    maxHeight: '700px',
+    overflow: 'auto',
   },
   previewNav: {
     display: 'flex',
