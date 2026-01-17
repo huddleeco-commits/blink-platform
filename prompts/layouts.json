@@ -1,0 +1,343 @@
+{
+  "hero-split": {
+    "name": "Split Hero",
+    "description": "Text/CTA on left, image/video on right. 50/50 or 60/40 split.",
+    "structure": "Two-column hero with content left, visual right",
+    "bestFor": ["saas", "startup", "agency", "consulting"],
+    "heroHeight": "90vh",
+    "contentPosition": "left",
+    "visualPosition": "right",
+    "codeHint": "display: flex; hero with text container (50-60%) and image/video container (40-50%). Text side: headline, subheadline, CTA buttons, optional stats row below. Visual side: product screenshot, mockup, or looping video.",
+    "exampleStructure": {
+      "left": ["eyebrow-label", "headline", "subheadline", "cta-buttons", "stats-row"],
+      "right": ["hero-image", "or-video", "or-mockup"]
+    }
+  },
+
+  "hero-full-image": {
+    "name": "Full Image Hero",
+    "description": "Full-width background image with overlay and centered content",
+    "structure": "Full viewport hero with background image, gradient overlay, centered text",
+    "bestFor": ["restaurant", "hotel", "travel", "real-estate", "photography"],
+    "heroHeight": "100vh",
+    "contentPosition": "center",
+    "visualPosition": "background",
+    "codeHint": "Full viewport section with backgroundImage using linear-gradient overlay. Content absolutely centered. Large headline, subheadline, CTA button(s). Optional scroll indicator at bottom.",
+    "exampleStructure": {
+      "background": ["full-image-with-overlay"],
+      "content": ["headline", "subheadline", "cta-button", "scroll-indicator"]
+    }
+  },
+
+  "hero-video-background": {
+    "name": "Video Background Hero",
+    "description": "Looping video background with overlay and content",
+    "structure": "Full viewport with autoplay muted video, gradient overlay, centered content",
+    "bestFor": ["bar", "fitness", "hotel", "event-venue", "restaurant"],
+    "heroHeight": "100vh",
+    "contentPosition": "center",
+    "visualPosition": "background-video",
+    "codeHint": "<video autoPlay muted loop playsInline> as background with position absolute, object-fit cover. Gradient overlay div. Content centered with high z-index. Fallback image for mobile.",
+    "exampleStructure": {
+      "background": ["video-element", "gradient-overlay"],
+      "content": ["headline", "subheadline", "cta-buttons"]
+    }
+  },
+
+  "hero-minimal": {
+    "name": "Minimal Hero",
+    "description": "Simple text-focused hero with minimal visuals",
+    "structure": "Clean hero with just headline, brief text, and single CTA",
+    "bestFor": ["portfolio", "agency", "consulting", "law-firm"],
+    "heroHeight": "70vh",
+    "contentPosition": "center",
+    "visualPosition": "none",
+    "codeHint": "Simple centered container with large headline, optional subtext, single CTA. Background can be solid color or subtle gradient. Focus on typography.",
+    "exampleStructure": {
+      "content": ["headline", "subheadline", "single-cta"]
+    }
+  },
+
+  "hero-cards-overlay": {
+    "name": "Hero with Cards Overlay",
+    "description": "Hero with floating service/feature cards overlapping into next section",
+    "structure": "Hero with background, then row of cards that overlap hero bottom edge",
+    "bestFor": ["healthcare", "consulting", "insurance", "accounting"],
+    "heroHeight": "80vh",
+    "contentPosition": "center-top",
+    "visualPosition": "background",
+    "codeHint": "Hero section with negative margin cards container. Cards positioned to overlap hero bottom by 50%. Creates depth and visual interest. Cards contain icons, titles, brief descriptions.",
+    "exampleStructure": {
+      "hero": ["background", "headline", "subheadline"],
+      "overlay": ["3-4-service-cards-overlapping"]
+    }
+  },
+
+  "hero-asymmetric": {
+    "name": "Asymmetric Hero",
+    "description": "Off-center layout with diagonal or asymmetric visual elements",
+    "structure": "Content offset to one side with asymmetric shapes or images",
+    "bestFor": ["creative", "agency", "startup", "portfolio"],
+    "heroHeight": "90vh",
+    "contentPosition": "left-offset",
+    "visualPosition": "right-asymmetric",
+    "codeHint": "Grid or flex layout with content taking 40% on left, visual element using clip-path or diagonal edges on right. Creates dynamic, modern feel.",
+    "exampleStructure": {
+      "left": ["headline", "description", "cta"],
+      "right": ["asymmetric-image-or-shape"]
+    }
+  },
+
+  "hero-slider": {
+    "name": "Hero Slider/Carousel",
+    "description": "Multiple rotating slides with different messages/images",
+    "structure": "Full-width carousel with navigation dots/arrows",
+    "bestFor": ["ecommerce", "hotel", "real-estate", "event-venue"],
+    "heroHeight": "90vh",
+    "contentPosition": "varies",
+    "visualPosition": "background-per-slide",
+    "codeHint": "Carousel component with useState for active slide. Auto-advance with setInterval. Each slide has background image and unique content. Navigation dots and/or arrows.",
+    "exampleStructure": {
+      "slides": ["slide-1", "slide-2", "slide-3"],
+      "controls": ["dots", "arrows", "auto-advance"]
+    }
+  },
+
+  "hero-product-showcase": {
+    "name": "Product Showcase Hero",
+    "description": "Hero focused on displaying products with pricing/features",
+    "structure": "Product image prominent with key details and purchase CTA",
+    "bestFor": ["ecommerce", "subscription-box", "saas"],
+    "heroHeight": "85vh",
+    "contentPosition": "split-or-overlay",
+    "visualPosition": "product-focused",
+    "codeHint": "Large product image/mockup with floating info cards. Price badge, key features, add-to-cart or subscribe CTA. Can include 3D rotation effect on product.",
+    "exampleStructure": {
+      "visual": ["large-product-image", "floating-detail-cards"],
+      "content": ["product-name", "price", "key-features", "cta-button"]
+    }
+  },
+
+  "services-grid": {
+    "name": "Services Grid Layout",
+    "description": "Grid of service cards with icons, titles, descriptions",
+    "structure": "3 or 4 column grid of service offerings",
+    "bestFor": ["consulting", "healthcare", "law-firm", "agency"],
+    "columns": "3-4",
+    "codeHint": "CSS Grid with gap. Each card: icon (Lucide), title, description, optional link. Hover effects: lift, shadow increase, icon color change. Equal height cards.",
+    "cardStructure": {
+      "icon": "Lucide icon in accent color",
+      "title": "Service name",
+      "description": "2-3 sentence description",
+      "link": "Optional learn more"
+    }
+  },
+
+  "features-alternating": {
+    "name": "Alternating Features",
+    "description": "Features listed with image/text alternating sides",
+    "structure": "Full-width sections alternating: text-left/image-right, then image-left/text-right",
+    "bestFor": ["saas", "startup", "healthcare", "online-course"],
+    "codeHint": "Stack of full-width sections. Odd sections: flex-direction row (text left, image right). Even sections: flex-direction row-reverse. Each section: heading, paragraph, bullet points, image.",
+    "sectionStructure": {
+      "text": ["section-title", "description", "bullet-points"],
+      "visual": ["feature-image-or-screenshot"]
+    }
+  },
+
+  "testimonials-carousel": {
+    "name": "Testimonials Carousel",
+    "description": "Rotating testimonial cards with customer quotes",
+    "structure": "Single testimonial displayed at a time with navigation",
+    "bestFor": ["all"],
+    "codeHint": "useState for active index. Large quote icon, testimonial text in italics, customer name, title, optional photo. Auto-advance or manual navigation. Fade transition between testimonials.",
+    "cardStructure": {
+      "quote-icon": "Large decorative quote mark",
+      "text": "Testimonial in italics",
+      "author": "Name, title, company",
+      "photo": "Optional circular headshot"
+    }
+  },
+
+  "testimonials-grid": {
+    "name": "Testimonials Grid",
+    "description": "Multiple testimonials displayed in a grid layout",
+    "structure": "2-3 column grid of testimonial cards",
+    "bestFor": ["saas", "consulting", "healthcare"],
+    "columns": "2-3",
+    "codeHint": "Grid of testimonial cards. Each card: quote text, author info, star rating optional. Cards can have subtle border or shadow. Masonry-style optional for varying heights.",
+    "cardStructure": {
+      "stars": "Optional 5-star rating",
+      "text": "Testimonial quote",
+      "author": "Name and title",
+      "photo": "Optional headshot"
+    }
+  },
+
+  "pricing-cards": {
+    "name": "Pricing Cards",
+    "description": "2-3 pricing tiers side by side with feature comparison",
+    "structure": "Row of pricing cards with features and CTAs",
+    "bestFor": ["saas", "subscription-box", "fitness", "online-course"],
+    "columns": "2-3",
+    "codeHint": "Flex or grid row of pricing cards. Featured/recommended tier highlighted with different background or border. Each card: tier name, price, billing period, feature list with check icons, CTA button. Featured card slightly larger or elevated.",
+    "cardStructure": {
+      "tier-name": "Basic/Pro/Enterprise",
+      "price": "Large price display",
+      "period": "/month or /year",
+      "features": "List with Check icons",
+      "cta": "Sign Up / Get Started button"
+    }
+  },
+
+  "stats-row": {
+    "name": "Statistics Row",
+    "description": "Row of impressive statistics with numbers and labels",
+    "structure": "Horizontal row of 3-4 stat items",
+    "bestFor": ["all"],
+    "codeHint": "Flex row with justify-content space-around. Each stat: large animated number (counter animation), label below. Numbers can have + or % suffix. Use Intersection Observer to trigger count animation when visible.",
+    "statStructure": {
+      "number": "Large number with counter animation",
+      "suffix": "+ or % or K",
+      "label": "What the number represents"
+    }
+  },
+
+  "cta-split": {
+    "name": "Split CTA Section",
+    "description": "Call-to-action with compelling copy and action button",
+    "structure": "Two-column CTA: headline/text on one side, form or button on other",
+    "bestFor": ["all"],
+    "codeHint": "Full-width section with contrasting background (dark or accent color). Split layout: left has headline and supporting text, right has email capture form or prominent CTA button.",
+    "contentStructure": {
+      "left": ["headline", "supporting-text"],
+      "right": ["form-or-cta-button"]
+    }
+  },
+
+  "cta-centered": {
+    "name": "Centered CTA Section",
+    "description": "Simple centered call-to-action block",
+    "structure": "Full-width section with centered headline, text, and button",
+    "bestFor": ["all"],
+    "codeHint": "Full-width section, often with dark or gradient background. Centered content: compelling headline, optional subtext, prominent CTA button. Keep concise and action-focused.",
+    "contentStructure": {
+      "content": ["headline", "subtext", "cta-button"]
+    }
+  },
+
+  "gallery-masonry": {
+    "name": "Masonry Gallery",
+    "description": "Pinterest-style image gallery with varying heights",
+    "structure": "Multi-column masonry layout for images",
+    "bestFor": ["photography", "portfolio", "spa-salon", "restaurant"],
+    "columns": "3-4",
+    "codeHint": "CSS columns or masonry grid. Images with varying aspect ratios. Hover effect: slight zoom, overlay with title/category. Lightbox on click for full view.",
+    "features": ["hover-zoom", "lightbox", "category-filter"]
+  },
+
+  "gallery-grid": {
+    "name": "Standard Gallery Grid",
+    "description": "Even grid of images with uniform sizing",
+    "structure": "Grid of equally-sized image thumbnails",
+    "bestFor": ["real-estate", "hotel", "event-venue", "construction"],
+    "columns": "3-4",
+    "codeHint": "CSS Grid with equal-sized cells. Images with object-fit cover. Hover: overlay with zoom icon or title. Click opens lightbox with larger image and navigation.",
+    "features": ["hover-overlay", "lightbox", "navigation"]
+  },
+
+  "team-grid": {
+    "name": "Team Grid",
+    "description": "Grid of team member cards with photos and info",
+    "structure": "Grid of team member cards with photos, names, titles",
+    "bestFor": ["agency", "law-firm", "healthcare", "consulting"],
+    "columns": "3-4",
+    "codeHint": "Grid of team cards. Each card: circular or square photo, name, title, optional bio snippet, social links. Hover: reveal additional info or social links. Consistent photo treatment.",
+    "cardStructure": {
+      "photo": "Headshot (circular or square)",
+      "name": "Full name",
+      "title": "Job title",
+      "bio": "Optional short bio",
+      "social": "LinkedIn, Twitter, etc."
+    }
+  },
+
+  "process-steps": {
+    "name": "Process Steps",
+    "description": "Numbered steps showing a process or how-it-works",
+    "structure": "Horizontal or vertical sequence of numbered steps",
+    "bestFor": ["consulting", "construction", "moving", "online-course"],
+    "direction": "horizontal-or-vertical",
+    "codeHint": "Flex row (or column on mobile) of numbered step cards. Each step: large number or icon, title, description. Connecting lines or arrows between steps. Numbers in accent color circles.",
+    "stepStructure": {
+      "number": "01, 02, 03 in circle",
+      "title": "Step name",
+      "description": "What happens in this step",
+      "connector": "Line or arrow to next step"
+    }
+  },
+
+  "faq-accordion": {
+    "name": "FAQ Accordion",
+    "description": "Expandable FAQ items with questions and answers",
+    "structure": "Vertical list of expandable question/answer pairs",
+    "bestFor": ["all"],
+    "codeHint": "useState for openIndex. Map through FAQ items. Each item: clickable question row with Plus/Minus icon, answer panel that expands/collapses with height transition. Only one open at a time, or allow multiple.",
+    "itemStructure": {
+      "question": "Question text, clickable",
+      "answer": "Answer text, expandable",
+      "icon": "Plus when closed, Minus when open"
+    }
+  },
+
+  "contact-split": {
+    "name": "Split Contact Section",
+    "description": "Contact form on one side, info/map on other",
+    "structure": "Two-column layout: form left, contact info right",
+    "bestFor": ["all"],
+    "codeHint": "Split layout. Left: contact form (name, email, phone, message, submit). Right: contact info with icons (MapPin, Phone, Mail, Clock), business hours, optional embedded map. Form with validation and submit handling.",
+    "contentStructure": {
+      "left": ["contact-form"],
+      "right": ["address", "phone", "email", "hours", "map"]
+    }
+  },
+
+  "blog-grid": {
+    "name": "Blog Post Grid",
+    "description": "Grid of blog post preview cards",
+    "structure": "Grid of blog post cards with images and excerpts",
+    "bestFor": ["agency", "consulting", "healthcare", "all"],
+    "columns": "2-3",
+    "codeHint": "Grid of blog cards. Each card: featured image, category tag, title, excerpt, author/date, read more link. Hover: slight lift, image zoom. Consistent card heights.",
+    "cardStructure": {
+      "image": "Featured image",
+      "category": "Category tag",
+      "title": "Post title",
+      "excerpt": "2-3 line preview",
+      "meta": "Author, date",
+      "link": "Read more"
+    }
+  },
+
+  "logo-cloud": {
+    "name": "Logo Cloud / Social Proof",
+    "description": "Row of client/partner/integration logos",
+    "structure": "Horizontal row of grayscale logos, optional 'Trusted by' label",
+    "bestFor": ["saas", "consulting", "agency", "all"],
+    "codeHint": "Full-width section with centered logos. Label above: 'Trusted by' or 'As seen in' or 'Our clients'. Logos in grayscale, colorize on hover optional. Can auto-scroll for many logos.",
+    "features": ["grayscale-default", "color-on-hover", "auto-scroll-optional"]
+  },
+
+  "newsletter-simple": {
+    "name": "Simple Newsletter Signup",
+    "description": "Email capture section for newsletter signups",
+    "structure": "Compact section with headline and email input",
+    "bestFor": ["all"],
+    "codeHint": "Section with background color/pattern. Centered content: catchy headline, brief value prop, email input with submit button inline. Success/error state handling.",
+    "contentStructure": {
+      "headline": "Join our newsletter",
+      "subtext": "Value proposition",
+      "form": "Email input + submit button"
+    }
+  }
+}

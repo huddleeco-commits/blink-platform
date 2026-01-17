@@ -1,0 +1,294 @@
+{
+  "fade-up": {
+    "name": "Fade Up on Scroll",
+    "description": "Elements fade in and slide up when they enter viewport",
+    "type": "scroll-reveal",
+    "css": "opacity: 0; transform: translateY(30px); transition: opacity 0.6s ease-out, transform 0.6s ease-out;",
+    "activeCSS": "opacity: 1; transform: translateY(0);",
+    "implementation": "Use Intersection Observer to add 'visible' class when element enters viewport.",
+    "reactHint": "const [isVisible, setIsVisible] = useState(false); useEffect with IntersectionObserver. Style: { opacity: isVisible ? 1 : 0, transform: isVisible ? 'translateY(0)' : 'translateY(30px)', transition: 'all 0.6s ease-out' }"
+  },
+
+  "fade-in": {
+    "name": "Simple Fade In",
+    "description": "Elements fade in without movement",
+    "type": "scroll-reveal",
+    "css": "opacity: 0; transition: opacity 0.8s ease-out;",
+    "activeCSS": "opacity: 1;",
+    "reactHint": "Style: { opacity: isVisible ? 1 : 0, transition: 'opacity 0.8s ease-out' }"
+  },
+
+  "fade-in-slow": {
+    "name": "Slow Elegant Fade In",
+    "description": "Slow, elegant fade for luxury aesthetics",
+    "type": "scroll-reveal",
+    "css": "opacity: 0; transition: opacity 1.2s ease-out;",
+    "activeCSS": "opacity: 1;",
+    "reactHint": "Style: { opacity: isVisible ? 1 : 0, transition: 'opacity 1.2s ease-out' }"
+  },
+
+  "fade-up-stagger": {
+    "name": "Staggered Fade Up",
+    "description": "Multiple elements fade up with staggered timing",
+    "type": "scroll-reveal",
+    "implementation": "Each child element has increasing transition-delay. First: 0ms, Second: 100ms, Third: 200ms.",
+    "reactHint": "Map through items with index. transitionDelay: `${index * 100}ms`. Trigger all when container visible."
+  },
+
+  "slide-in-left": {
+    "name": "Slide In from Left",
+    "description": "Element slides in from the left side",
+    "type": "scroll-reveal",
+    "css": "opacity: 0; transform: translateX(-50px); transition: all 0.6s ease-out;",
+    "activeCSS": "opacity: 1; transform: translateX(0);",
+    "reactHint": "transform: isVisible ? 'translateX(0)' : 'translateX(-50px)'"
+  },
+
+  "slide-in-right": {
+    "name": "Slide In from Right",
+    "description": "Element slides in from the right side",
+    "type": "scroll-reveal",
+    "css": "opacity: 0; transform: translateX(50px); transition: all 0.6s ease-out;",
+    "activeCSS": "opacity: 1; transform: translateX(0);",
+    "reactHint": "transform: isVisible ? 'translateX(0)' : 'translateX(50px)'"
+  },
+
+  "scale-in": {
+    "name": "Scale In",
+    "description": "Element scales up from smaller size",
+    "type": "scroll-reveal",
+    "css": "opacity: 0; transform: scale(0.9); transition: all 0.5s ease-out;",
+    "activeCSS": "opacity: 1; transform: scale(1);",
+    "reactHint": "transform: isVisible ? 'scale(1)' : 'scale(0.9)'"
+  },
+
+  "hover-lift": {
+    "name": "Hover Lift",
+    "description": "Card lifts up with enhanced shadow on hover",
+    "type": "hover",
+    "css": "transition: transform 0.3s ease, box-shadow 0.3s ease;",
+    "hoverCSS": "transform: translateY(-8px); box-shadow: 0 20px 40px rgba(0,0,0,0.15);",
+    "reactHint": "onMouseEnter/onMouseLeave to toggle hover state. Style changes transform and boxShadow."
+  },
+
+  "hover-scale": {
+    "name": "Hover Scale",
+    "description": "Element slightly scales up on hover",
+    "type": "hover",
+    "css": "transition: transform 0.3s ease;",
+    "hoverCSS": "transform: scale(1.05);",
+    "reactHint": "Style: { transform: isHovered ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.3s ease' }"
+  },
+
+  "hover-glow": {
+    "name": "Hover Glow",
+    "description": "Element gets glowing shadow on hover",
+    "type": "hover",
+    "css": "transition: box-shadow 0.3s ease;",
+    "hoverCSS": "box-shadow: 0 0 30px rgba(99, 102, 241, 0.5);",
+    "reactHint": "Use accent color in rgba for glow. boxShadow: isHovered ? '0 0 30px rgba(accent)' : 'none'"
+  },
+
+  "image-zoom": {
+    "name": "Image Zoom on Hover",
+    "description": "Image zooms slightly within its container on hover",
+    "type": "hover",
+    "css": "overflow: hidden; img { transition: transform 0.5s ease; }",
+    "hoverCSS": "img { transform: scale(1.1); }",
+    "reactHint": "Container with overflow:hidden. Image inside with transform scale on hover. Smooth 0.5s transition."
+  },
+
+  "parallax": {
+    "name": "Parallax Background",
+    "description": "Background image moves slower than foreground on scroll",
+    "type": "scroll-effect",
+    "css": "background-attachment: fixed; background-position: center; background-size: cover;",
+    "implementation": "Use background-attachment: fixed for simple parallax. For advanced: calculate scroll position and adjust backgroundPositionY.",
+    "reactHint": "Simple: backgroundAttachment: 'fixed'. Advanced: useScroll hook, adjust backgroundPositionY based on scrollY."
+  },
+
+  "parallax-subtle": {
+    "name": "Subtle Parallax",
+    "description": "Gentle parallax effect for backgrounds",
+    "type": "scroll-effect",
+    "css": "background-attachment: fixed; background-position: center;",
+    "reactHint": "backgroundAttachment: 'fixed' for simple implementation"
+  },
+
+  "glassmorphism": {
+    "name": "Glassmorphism",
+    "description": "Frosted glass effect with blur and transparency",
+    "type": "style",
+    "css": "background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 16px;",
+    "reactHint": "Style: { background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)' }"
+  },
+
+  "glassmorphism-dark": {
+    "name": "Dark Glassmorphism",
+    "description": "Frosted glass effect for dark themes",
+    "type": "style",
+    "css": "background: rgba(0, 0, 0, 0.3); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1);",
+    "reactHint": "Style: { background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)' }"
+  },
+
+  "gradient-text": {
+    "name": "Gradient Text",
+    "description": "Text with gradient color fill",
+    "type": "style",
+    "css": "background: linear-gradient(135deg, #6366f1, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;",
+    "reactHint": "Style: { background: 'linear-gradient(135deg, primary, secondary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }"
+  },
+
+  "gradient-border": {
+    "name": "Gradient Border",
+    "description": "Border with gradient effect",
+    "type": "style",
+    "css": "border: 2px solid transparent; background: linear-gradient(white, white) padding-box, linear-gradient(135deg, #6366f1, #8b5cf6) border-box;",
+    "reactHint": "Use pseudo-element or border-image for gradient borders"
+  },
+
+  "counter-animation": {
+    "name": "Number Counter",
+    "description": "Numbers count up from 0 to target value",
+    "type": "animation",
+    "implementation": "useState for current value, useEffect with setInterval to increment. Start when element visible. Clear interval when target reached.",
+    "reactHint": "const [count, setCount] = useState(0); useEffect: interval that increments count until target. Format with toLocaleString() for commas."
+  },
+
+  "typing-effect": {
+    "name": "Typing Effect",
+    "description": "Text appears as if being typed",
+    "type": "animation",
+    "implementation": "useState for displayed text, useEffect with setInterval to add one character at a time. Optional cursor blink.",
+    "reactHint": "const [displayText, setDisplayText] = useState(''); setInterval adding one char from full text. Cursor: blinking | character."
+  },
+
+  "pulse-cta": {
+    "name": "Pulsing CTA",
+    "description": "Button has subtle pulsing animation to draw attention",
+    "type": "animation",
+    "css": "@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } } animation: pulse 2s infinite;",
+    "reactHint": "Use CSS keyframes or framer-motion for subtle scale pulse on CTA buttons"
+  },
+
+  "float-animation": {
+    "name": "Floating Element",
+    "description": "Element gently floats up and down",
+    "type": "animation",
+    "css": "@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } } animation: float 3s ease-in-out infinite;",
+    "reactHint": "CSS keyframes for gentle up/down motion. Good for hero images, icons, decorative elements."
+  },
+
+  "gradient-animation": {
+    "name": "Animated Gradient Background",
+    "description": "Background gradient that slowly shifts colors",
+    "type": "animation",
+    "css": "background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab); background-size: 400% 400%; animation: gradientShift 15s ease infinite;",
+    "keyframes": "@keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }",
+    "reactHint": "Apply animated gradient to hero backgrounds for dynamic feel. Use subtle colors for professional look."
+  },
+
+  "video-background": {
+    "name": "Video Background",
+    "description": "Looping video as section background",
+    "type": "media",
+    "implementation": "<video autoPlay muted loop playsInline style={{ position: 'absolute', width: '100%', height: '100%', objectFit: 'cover', zIndex: -1 }}><source src='video.mp4' type='video/mp4' /></video>",
+    "reactHint": "Video element with autoPlay muted loop playsInline. Absolute positioned behind content. Add gradient overlay div on top for text readability."
+  },
+
+  "image-reveal": {
+    "name": "Image Reveal",
+    "description": "Image revealed with sliding mask effect",
+    "type": "scroll-reveal",
+    "implementation": "Container with overflow hidden. Pseudo-element or div slides away to reveal image. Triggered on scroll.",
+    "reactHint": "Wrapper with clipPath or transform on overlay. Animate clipPath: inset(0 100% 0 0) to inset(0 0 0 0) on scroll."
+  },
+
+  "before-after-slider": {
+    "name": "Before/After Slider",
+    "description": "Draggable slider comparing two images",
+    "type": "interactive",
+    "implementation": "Two overlapping images. Slider div in middle. Drag to adjust clip-path or width of top image. Mouse/touch events for dragging.",
+    "reactHint": "useState for slider position (0-100). Left image full width, right image with clipPath based on position. onMouseMove/onTouchMove to update position."
+  },
+
+  "lightbox": {
+    "name": "Image Lightbox",
+    "description": "Click image to open fullscreen modal view",
+    "type": "interactive",
+    "implementation": "Click handler opens modal with larger image. Modal has dark overlay, centered image, close button, optional prev/next navigation.",
+    "reactHint": "useState for isOpen and selectedImage. Modal component with fixed position, high z-index. Backdrop with onClick to close."
+  },
+
+  "smooth-scroll": {
+    "name": "Smooth Scroll",
+    "description": "Smooth scrolling when clicking anchor links",
+    "type": "navigation",
+    "css": "html { scroll-behavior: smooth; }",
+    "reactHint": "Add scroll-behavior: smooth to html/body. Or use element.scrollIntoView({ behavior: 'smooth' }) for programmatic scrolling."
+  },
+
+  "sticky-header": {
+    "name": "Sticky Header",
+    "description": "Header stays fixed at top when scrolling",
+    "type": "navigation",
+    "css": "position: sticky; top: 0; z-index: 100;",
+    "reactHint": "Style: { position: 'sticky', top: 0, zIndex: 100 }. Optional: change background/shadow when scrolled (useState + scroll listener)."
+  },
+
+  "scroll-progress": {
+    "name": "Scroll Progress Bar",
+    "description": "Progress bar showing how far user has scrolled",
+    "type": "navigation",
+    "implementation": "Fixed bar at top. Width calculated from scrollY / (documentHeight - windowHeight) * 100%.",
+    "reactHint": "useEffect with scroll listener. useState for progress. Fixed div at top with width: `${progress}%`."
+  },
+
+  "warm-overlay": {
+    "name": "Warm Color Overlay",
+    "description": "Warm-toned gradient overlay on images",
+    "type": "style",
+    "css": "linear-gradient(135deg, rgba(44, 24, 16, 0.7), rgba(139, 69, 19, 0.5))",
+    "reactHint": "Use as backgroundImage with image: `linear-gradient(...), url(image.jpg)`"
+  },
+
+  "dark-overlay": {
+    "name": "Dark Overlay",
+    "description": "Dark gradient overlay for text readability",
+    "type": "style",
+    "css": "linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7))",
+    "reactHint": "backgroundImage: `linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.7)), url(image.jpg)`"
+  },
+
+  "accent-overlay": {
+    "name": "Accent Color Overlay",
+    "description": "Brand color tinted overlay",
+    "type": "style",
+    "css": "linear-gradient(135deg, rgba(accent, 0.8), rgba(primary, 0.9))",
+    "reactHint": "Use brand colors with transparency for hero overlays"
+  },
+
+  "neon-glow": {
+    "name": "Neon Glow Effect",
+    "description": "Neon-style glow for dark themes",
+    "type": "style",
+    "css": "text-shadow: 0 0 10px #00ff88, 0 0 20px #00ff88, 0 0 30px #00ff88; OR box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);",
+    "reactHint": "textShadow or boxShadow with bright neon color. Multiple shadows at increasing blur for glow effect."
+  },
+
+  "particle-background": {
+    "name": "Particle Background",
+    "description": "Animated particles floating in background",
+    "type": "animation",
+    "implementation": "Canvas element with particles array. requestAnimationFrame loop to update positions and redraw. Particles: position, velocity, size, opacity.",
+    "reactHint": "useRef for canvas. useEffect for animation loop. Generate random particles, update positions each frame, wrap around edges."
+  },
+
+  "morphing-blob": {
+    "name": "Morphing Blob",
+    "description": "Organic blob shape that continuously morphs",
+    "type": "animation",
+    "css": "@keyframes blob { 0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; } 50% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; } }",
+    "reactHint": "Div with background gradient and animated border-radius. Creates organic, flowing shape."
+  }
+}

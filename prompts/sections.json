@@ -1,0 +1,419 @@
+{
+  "hero-standard": {
+    "name": "Standard Hero Section",
+    "description": "Full viewport hero with background, headline, and CTA",
+    "height": "100vh",
+    "elements": ["background-image-or-video", "gradient-overlay", "headline", "subheadline", "cta-buttons"],
+    "codeStructure": "Section with min-height 100vh, background image with overlay, centered content container, h1 headline, p subheadline, button group"
+  },
+
+  "hero-split": {
+    "name": "Split Hero Section",
+    "description": "Two-column hero with text and visual",
+    "height": "90vh",
+    "elements": ["text-column", "headline", "subheadline", "cta-buttons", "visual-column", "image-or-video"],
+    "codeStructure": "Flex container, left div (50-60%) with text content, right div (40-50%) with image/video/mockup"
+  },
+
+  "hero-minimal": {
+    "name": "Minimal Hero Section",
+    "description": "Simple text-focused hero",
+    "height": "70vh",
+    "elements": ["headline", "subheadline", "single-cta"],
+    "codeStructure": "Centered container with large headline, brief subtext, single prominent CTA"
+  },
+
+  "social-proof-logos": {
+    "name": "Logo Cloud Section",
+    "description": "Row of client/partner logos",
+    "height": "auto",
+    "padding": "60px",
+    "elements": ["section-label", "logo-row"],
+    "codeStructure": "Section with 'Trusted by' or 'As seen in' label, flex row of grayscale logos, hover to colorize"
+  },
+
+  "features-grid": {
+    "name": "Features Grid Section",
+    "description": "Grid of feature cards with icons",
+    "height": "auto",
+    "padding": "100px",
+    "columns": "3-4",
+    "elements": ["section-heading", "section-subheading", "feature-cards"],
+    "cardElements": ["icon", "title", "description"],
+    "codeStructure": "Section with centered heading, CSS Grid of feature cards, each card has Lucide icon, h3 title, p description"
+  },
+
+  "features-alternating": {
+    "name": "Alternating Features Section",
+    "description": "Features with alternating text/image layout",
+    "height": "auto",
+    "padding": "80px per feature",
+    "elements": ["feature-blocks"],
+    "blockElements": ["image", "heading", "description", "bullet-points"],
+    "codeStructure": "Stack of feature sections, odd: text-left image-right, even: image-left text-right, flex-direction row/row-reverse"
+  },
+
+  "features-large": {
+    "name": "Large Feature Showcase",
+    "description": "Single feature highlighted with large visual",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["section-heading", "large-image", "feature-details"],
+    "codeStructure": "Section with heading, large screenshot/image, row of 3-4 feature points below"
+  },
+
+  "services-grid": {
+    "name": "Services Grid Section",
+    "description": "Grid of service offerings",
+    "height": "auto",
+    "padding": "100px",
+    "columns": "3-4",
+    "elements": ["section-heading", "service-cards"],
+    "cardElements": ["icon", "title", "description", "learn-more-link"],
+    "codeStructure": "Section heading, grid of service cards, each with icon, title, description, optional link"
+  },
+
+  "services-detailed": {
+    "name": "Detailed Services Section",
+    "description": "Services with expanded descriptions",
+    "height": "auto",
+    "padding": "100px",
+    "columns": "2",
+    "elements": ["section-heading", "service-items"],
+    "itemElements": ["number", "title", "description", "bullet-points"],
+    "codeStructure": "Two-column layout, each service has number (01, 02), title, full description, feature bullets"
+  },
+
+  "about-story": {
+    "name": "About/Story Section",
+    "description": "Company story with narrative text",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["section-heading", "story-text", "pull-quote", "image"],
+    "codeStructure": "Two-column: left has story paragraphs, right has pull quote and/or image"
+  },
+
+  "about-team": {
+    "name": "Team Section",
+    "description": "Team member grid with photos and bios",
+    "height": "auto",
+    "padding": "100px",
+    "columns": "3-4",
+    "elements": ["section-heading", "team-cards"],
+    "cardElements": ["photo", "name", "title", "bio", "social-links"],
+    "codeStructure": "Section heading, grid of team cards, each with photo, name, title, optional bio snippet, social icons"
+  },
+
+  "about-values": {
+    "name": "Values Section",
+    "description": "Company values with icons",
+    "height": "auto",
+    "padding": "100px",
+    "columns": "3-4",
+    "elements": ["section-heading", "values-cards"],
+    "cardElements": ["icon", "value-name", "description"],
+    "codeStructure": "Section heading, grid of value cards with icons, value names, brief descriptions"
+  },
+
+  "stats-row": {
+    "name": "Statistics Row Section",
+    "description": "Row of impressive statistics",
+    "height": "auto",
+    "padding": "80px",
+    "elements": ["stat-items"],
+    "statElements": ["number", "suffix", "label"],
+    "codeStructure": "Flex row with space-around, 3-4 stats, each has large number (animated counter), + or %, label below"
+  },
+
+  "stats-with-image": {
+    "name": "Stats with Background Image",
+    "description": "Statistics overlaid on background image",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["background-image", "overlay", "stats-row"],
+    "codeStructure": "Section with background image, dark overlay, centered stats row"
+  },
+
+  "testimonials-carousel": {
+    "name": "Testimonials Carousel Section",
+    "description": "Rotating single testimonial display",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["section-heading", "testimonial-slider"],
+    "testimonialElements": ["quote-icon", "quote-text", "author-name", "author-title", "author-photo"],
+    "codeStructure": "Section with optional heading, carousel showing one testimonial at a time, navigation dots/arrows"
+  },
+
+  "testimonials-grid": {
+    "name": "Testimonials Grid Section",
+    "description": "Multiple testimonials in grid layout",
+    "height": "auto",
+    "padding": "100px",
+    "columns": "2-3",
+    "elements": ["section-heading", "testimonial-cards"],
+    "cardElements": ["stars", "quote-text", "author-name", "author-title"],
+    "codeStructure": "Section heading, grid of testimonial cards, each with optional stars, quote, author info"
+  },
+
+  "testimonial-featured": {
+    "name": "Featured Testimonial Section",
+    "description": "Single large testimonial highlighted",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["large-quote-icon", "quote-text", "author-info", "company-logo"],
+    "codeStructure": "Centered section, large decorative quote mark, large italic quote, author name/title, optional company logo"
+  },
+
+  "pricing-cards": {
+    "name": "Pricing Cards Section",
+    "description": "Pricing tiers side by side",
+    "height": "auto",
+    "padding": "100px",
+    "columns": "2-3",
+    "elements": ["section-heading", "pricing-cards", "money-back-badge"],
+    "cardElements": ["tier-name", "price", "period", "description", "features-list", "cta-button"],
+    "codeStructure": "Section heading, flex/grid row of pricing cards, featured tier highlighted, each has tier name, price, features with checks, CTA"
+  },
+
+  "pricing-comparison": {
+    "name": "Pricing Comparison Table",
+    "description": "Feature comparison table for pricing tiers",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["section-heading", "comparison-table"],
+    "codeStructure": "Table with tiers as columns, features as rows, check/x marks for inclusion"
+  },
+
+  "cta-simple": {
+    "name": "Simple CTA Section",
+    "description": "Centered call-to-action block",
+    "height": "auto",
+    "padding": "80px",
+    "elements": ["headline", "subtext", "cta-button"],
+    "codeStructure": "Full-width section with contrasting background, centered headline, brief subtext, prominent button"
+  },
+
+  "cta-split": {
+    "name": "Split CTA Section",
+    "description": "CTA with form or signup",
+    "height": "auto",
+    "padding": "80px",
+    "elements": ["headline", "description", "form-or-buttons"],
+    "codeStructure": "Two-column: left has headline and description, right has email form or CTA buttons"
+  },
+
+  "cta-banner": {
+    "name": "CTA Banner Section",
+    "description": "Horizontal banner CTA",
+    "height": "auto",
+    "padding": "40px",
+    "elements": ["headline", "cta-button"],
+    "codeStructure": "Flex row with headline on left, button on right, accent background color"
+  },
+
+  "process-steps": {
+    "name": "Process Steps Section",
+    "description": "Numbered steps showing process",
+    "height": "auto",
+    "padding": "100px",
+    "steps": "3-5",
+    "elements": ["section-heading", "steps"],
+    "stepElements": ["number", "title", "description", "connector"],
+    "codeStructure": "Section heading, horizontal row (vertical on mobile) of numbered steps, connecting lines between"
+  },
+
+  "how-it-works": {
+    "name": "How It Works Section",
+    "description": "Simple explanation of process",
+    "height": "auto",
+    "padding": "100px",
+    "steps": "3-4",
+    "elements": ["section-heading", "steps-with-icons"],
+    "stepElements": ["icon", "title", "description"],
+    "codeStructure": "Section heading, row of 3-4 steps, each with icon, title, description"
+  },
+
+  "gallery-grid": {
+    "name": "Gallery Grid Section",
+    "description": "Grid of images with lightbox",
+    "height": "auto",
+    "padding": "80px",
+    "columns": "3-4",
+    "elements": ["section-heading", "image-grid"],
+    "codeStructure": "Section with optional heading, CSS grid of images, hover overlay, click to open lightbox"
+  },
+
+  "gallery-masonry": {
+    "name": "Masonry Gallery Section",
+    "description": "Pinterest-style image layout",
+    "height": "auto",
+    "padding": "80px",
+    "columns": "3-4",
+    "elements": ["section-heading", "masonry-images"],
+    "codeStructure": "CSS columns or masonry grid, varying height images, hover effects, lightbox"
+  },
+
+  "portfolio-grid": {
+    "name": "Portfolio Grid Section",
+    "description": "Grid of project/work items",
+    "height": "auto",
+    "padding": "100px",
+    "columns": "2-3",
+    "elements": ["section-heading", "filter-tabs", "project-cards"],
+    "cardElements": ["image", "category", "title", "description"],
+    "codeStructure": "Section heading, optional category filter tabs, grid of project cards with images and info"
+  },
+
+  "contact-split": {
+    "name": "Contact Split Section",
+    "description": "Contact form with info sidebar",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["section-heading", "contact-form", "contact-info"],
+    "formElements": ["name", "email", "phone", "message", "submit"],
+    "infoElements": ["address", "phone", "email", "hours", "map"],
+    "codeStructure": "Two-column: left has contact form, right has contact info with icons, optional embedded map"
+  },
+
+  "contact-simple": {
+    "name": "Simple Contact Section",
+    "description": "Centered contact form",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["section-heading", "contact-form"],
+    "codeStructure": "Centered section, heading, max-width form with fields and submit button"
+  },
+
+  "faq-accordion": {
+    "name": "FAQ Accordion Section",
+    "description": "Expandable FAQ items",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["section-heading", "faq-items"],
+    "itemElements": ["question", "answer", "toggle-icon"],
+    "codeStructure": "Section heading, list of FAQ items, each with clickable question, expandable answer, Plus/Minus icon"
+  },
+
+  "faq-two-column": {
+    "name": "Two Column FAQ Section",
+    "description": "FAQs in two columns",
+    "height": "auto",
+    "padding": "100px",
+    "columns": "2",
+    "elements": ["section-heading", "faq-columns"],
+    "codeStructure": "Section heading, two columns of FAQ items, can be accordion or always expanded"
+  },
+
+  "newsletter-simple": {
+    "name": "Newsletter Signup Section",
+    "description": "Email capture for newsletter",
+    "height": "auto",
+    "padding": "60px",
+    "elements": ["headline", "description", "email-form"],
+    "codeStructure": "Section with background color, centered content, headline, brief description, inline email input and submit"
+  },
+
+  "newsletter-with-image": {
+    "name": "Newsletter with Image Section",
+    "description": "Newsletter signup with visual",
+    "height": "auto",
+    "padding": "80px",
+    "elements": ["image", "headline", "description", "email-form"],
+    "codeStructure": "Two-column: one side has image, other has newsletter content and form"
+  },
+
+  "location-map": {
+    "name": "Location/Map Section",
+    "description": "Business location with map",
+    "height": "auto",
+    "padding": "80px",
+    "elements": ["section-heading", "address-info", "map-embed"],
+    "codeStructure": "Section with heading, address/hours/phone info, embedded Google Map or static map image"
+  },
+
+  "locations-multiple": {
+    "name": "Multiple Locations Section",
+    "description": "Multiple business locations",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["section-heading", "location-cards"],
+    "cardElements": ["location-name", "address", "phone", "hours"],
+    "codeStructure": "Section heading, grid of location cards, each with name, address, phone, hours, directions link"
+  },
+
+  "blog-preview": {
+    "name": "Blog Preview Section",
+    "description": "Latest blog posts preview",
+    "height": "auto",
+    "padding": "100px",
+    "columns": "3",
+    "elements": ["section-heading", "blog-cards", "view-all-link"],
+    "cardElements": ["image", "category", "title", "excerpt", "date", "read-more"],
+    "codeStructure": "Section heading, grid of 3 blog post cards, View All Blog link"
+  },
+
+  "events-upcoming": {
+    "name": "Upcoming Events Section",
+    "description": "List of upcoming events",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["section-heading", "event-cards"],
+    "cardElements": ["date-badge", "title", "description", "location", "register-link"],
+    "codeStructure": "Section heading, list/grid of event cards with date badges, titles, details, registration links"
+  },
+
+  "menu-restaurant": {
+    "name": "Restaurant Menu Section",
+    "description": "Food menu with categories",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["section-heading", "category-tabs", "menu-items"],
+    "itemElements": ["name", "description", "price", "dietary-icons"],
+    "codeStructure": "Section heading, category tabs/filters, menu items with name, description, price, dietary indicators"
+  },
+
+  "schedule-classes": {
+    "name": "Class Schedule Section",
+    "description": "Weekly class schedule grid",
+    "height": "auto",
+    "padding": "100px",
+    "elements": ["section-heading", "schedule-grid"],
+    "codeStructure": "Section heading, table/grid showing days of week, time slots, class names"
+  },
+
+  "awards-credentials": {
+    "name": "Awards & Credentials Section",
+    "description": "Certifications, awards, badges",
+    "height": "auto",
+    "padding": "80px",
+    "elements": ["section-heading", "credential-logos"],
+    "codeStructure": "Section with optional heading, row of certification badges, award logos, membership emblems"
+  },
+
+  "partners-integrations": {
+    "name": "Partners/Integrations Section",
+    "description": "Partner or integration logos",
+    "height": "auto",
+    "padding": "80px",
+    "elements": ["section-heading", "logo-grid"],
+    "codeStructure": "Section heading like 'Our Partners' or 'Integrations', grid of partner/integration logos"
+  },
+
+  "footer-standard": {
+    "name": "Standard Footer",
+    "description": "Multi-column footer with links",
+    "height": "auto",
+    "padding": "60px",
+    "elements": ["logo", "description", "link-columns", "social-links", "copyright"],
+    "codeStructure": "Full-width dark section, grid with logo/description, multiple link columns, social icons, bottom copyright bar"
+  },
+
+  "footer-simple": {
+    "name": "Simple Footer",
+    "description": "Minimal single-row footer",
+    "height": "auto",
+    "padding": "40px",
+    "elements": ["logo", "links", "copyright"],
+    "codeStructure": "Single row: logo left, horizontal nav links center, copyright right"
+  }
+}

@@ -1,0 +1,1400 @@
+{
+  "pizza": {
+    "name": "Pizza / Pizzeria",
+    "icon": "🍕",
+    "category": "Food & Beverage",
+    "layouts": ["food-hero-full", "ambiance-video", "menu-split"],
+    "defaultLayout": "ambiance-video",
+    "effects": ["fade-up", "food-zoom", "warm-overlay"],
+    "sections": ["hero", "menu-preview", "about-chef", "gallery", "testimonials", "order-cta", "location"],
+    "vibe": "Warm, authentic, family-friendly, appetizing, Italian",
+    "typography": {
+      "heading": "'Playfair Display', Georgia, serif",
+      "body": "'Lato', system-ui, sans-serif",
+      "style": "Warm Italian-inspired headlines, clean readable body"
+    },
+    "colors": {
+      "primary": "#8B0000",
+      "accent": "#FFD700",
+      "secondary": "#2c1810",
+      "background": "#faf7f2",
+      "text": "#2c1810",
+      "textMuted": "#6b5b4f"
+    },
+    "imagery": {
+      "hero": "Fresh pizza being made, wood-fired oven, melted cheese",
+      "style": "Artisan pizza making, rustic Italian atmosphere, fresh ingredients",
+      "unsplash": "pizza making pizzeria italian restaurant"
+    },
+    "visualPrompt": "Create a warm, authentic pizzeria website. Hero should feature video of pizza being made or stunning pizza photography with Italian colors. Use warm Italian reds and golds. Include menu with pizza categories (specialty, classic, build-your-own), prices ($14-24), toppings. Sections: hero with order CTA, menu with pizza cards showing ingredients and prices, about section with Italian heritage/family story, photo gallery of pizzas and restaurant, testimonials, easy online ordering CTA, location with hours. Evoke authentic Italian pizzeria warmth."
+  },
+
+  "restaurant": {
+    "name": "Restaurant / Food Service",
+    "icon": "🍽️",
+    "category": "Food & Beverage",
+    "layouts": ["food-hero-full", "ambiance-video", "menu-split", "reservation-focus"],
+    "defaultLayout": "food-hero-full",
+    "effects": ["fade-up", "food-zoom", "warm-overlay", "parallax-food"],
+    "sections": ["hero", "menu-preview", "about-chef", "gallery", "testimonials", "reservation-cta", "location"],
+    "vibe": "Warm, appetizing, inviting, sensory experience",
+    "typography": {
+      "heading": "'Playfair Display', Georgia, serif",
+      "body": "'Lato', system-ui, sans-serif",
+      "style": "Elegant serif headlines, clean readable body"
+    },
+    "colors": {
+      "primary": "#2c1810",
+      "accent": "#c4a35a",
+      "secondary": "#8b4513",
+      "background": "#faf7f2",
+      "text": "#2c1810",
+      "textMuted": "#6b5b4f"
+    },
+    "imagery": {
+      "hero": "High-quality food photography, steam rising, warm lighting",
+      "style": "Close-up food shots, ambient restaurant interior, chef in action",
+      "unsplash": "restaurant food plating fine dining"
+    },
+    "visualPrompt": "Create a warm, appetizing restaurant website. Hero should feature stunning food photography with warm color overlay. Use elegant serif fonts for headlines. Include subtle zoom effects on food images on hover. Sections should flow naturally: hero with reservation CTA, menu preview with beautiful dish cards, chef/story section with parallax image, photo gallery with lightbox, testimonials from diners, and prominent reservation call-to-action. Color palette should evoke warmth and appetite - deep browns, warm golds, cream backgrounds."
+  },
+
+  "cafe": {
+    "name": "Coffee Shop / Cafe",
+    "icon": "☕",
+    "category": "Food & Beverage",
+    "layouts": ["cozy-hero", "menu-grid", "lifestyle-split"],
+    "defaultLayout": "cozy-hero",
+    "effects": ["fade-up", "steam-animation", "warm-overlay", "subtle-parallax"],
+    "sections": ["hero", "menu", "story", "atmosphere-gallery", "loyalty", "location-hours"],
+    "vibe": "Cozy, artisanal, community gathering spot, aromatic",
+    "typography": {
+      "heading": "'Josefin Sans', sans-serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Modern friendly headlines, approachable body text"
+    },
+    "colors": {
+      "primary": "#4a3728",
+      "accent": "#d4a574",
+      "secondary": "#8b7355",
+      "background": "#f9f6f1",
+      "text": "#3d3027",
+      "textMuted": "#7a6b5a"
+    },
+    "imagery": {
+      "hero": "Latte art, cozy interior, morning light through windows",
+      "style": "Warm tones, steam from cups, rustic wood textures",
+      "unsplash": "coffee shop latte art cozy cafe"
+    },
+    "visualPrompt": "Create a cozy, inviting coffee shop website. Hero should show beautiful latte art or cozy interior with warm morning light. Typography should feel friendly and approachable. Include menu section with drink categories, our story section about bean sourcing, atmospheric photo gallery, loyalty program highlight, and clear location/hours. Warm brown and cream color palette. Subtle animations on scroll."
+  },
+
+  "bar": {
+    "name": "Bar / Nightclub / Lounge",
+    "icon": "🍸",
+    "category": "Food & Beverage",
+    "layouts": ["dark-hero-video", "mood-lighting", "event-focus"],
+    "defaultLayout": "dark-hero-video",
+    "effects": ["fade-in-slow", "glow-accents", "parallax-dark", "hover-lift"],
+    "sections": ["hero", "drink-menu", "events", "vip-reservations", "gallery", "location"],
+    "vibe": "Sophisticated, nightlife, exclusive, moody atmosphere",
+    "typography": {
+      "heading": "'Bebas Neue', sans-serif",
+      "body": "'Montserrat', system-ui, sans-serif",
+      "style": "Bold uppercase headlines, sleek modern body"
+    },
+    "colors": {
+      "primary": "#0d0d0d",
+      "accent": "#d4af37",
+      "secondary": "#722f37",
+      "background": "#1a1a1a",
+      "text": "#ffffff",
+      "textMuted": "#a0a0a0"
+    },
+    "imagery": {
+      "hero": "Cocktails with dramatic lighting, bar atmosphere, neon accents",
+      "style": "Dark moody shots, bokeh lights, elegant glassware",
+      "unsplash": "cocktail bar nightlife lounge dark"
+    },
+    "visualPrompt": "Create a sophisticated, moody bar/lounge website. Dark theme throughout with gold or neon accents. Hero should feature video background or dramatic cocktail photography. Bold uppercase typography. Sections: signature drinks menu with beautiful imagery, upcoming events calendar, VIP reservation system, atmospheric gallery, location with hours. Glow effects on accent elements. Hover animations on drink cards."
+  },
+
+  "bakery": {
+    "name": "Bakery / Pastry Shop",
+    "icon": "🥐",
+    "category": "Food & Beverage",
+    "layouts": ["sweet-hero", "product-showcase", "artisan-story"],
+    "defaultLayout": "sweet-hero",
+    "effects": ["fade-up", "soft-zoom", "warm-glow", "float-subtle"],
+    "sections": ["hero", "daily-specials", "product-categories", "custom-orders", "our-story", "location"],
+    "vibe": "Sweet, artisanal, handcrafted, wholesome, delightful",
+    "typography": {
+      "heading": "'Cormorant Garamond', Georgia, serif",
+      "body": "'Nunito', system-ui, sans-serif",
+      "style": "Elegant flowing headlines, soft readable body"
+    },
+    "colors": {
+      "primary": "#8b5a2b",
+      "accent": "#f4a460",
+      "secondary": "#deb887",
+      "background": "#fffaf5",
+      "text": "#4a3728",
+      "textMuted": "#8b7355"
+    },
+    "imagery": {
+      "hero": "Fresh baked goods, golden croissants, dusted pastries",
+      "style": "Warm natural lighting, flour dust, rustic displays",
+      "unsplash": "bakery pastry croissant artisan bread"
+    },
+    "visualPrompt": "Create a warm, delightful bakery website. Hero featuring fresh-baked goods with soft natural lighting. Elegant serif headlines with soft, approachable body text. Sections: daily specials with rotating items, product categories (breads, pastries, cakes), custom order form for special occasions, our story about baking tradition, location with hours. Warm peachy-brown palette. Soft hover effects on product cards."
+  },
+
+  "law-firm": {
+    "name": "Law Firm / Attorney",
+    "icon": "⚖️",
+    "category": "Professional Services",
+    "layouts": ["trust-hero", "credentials-focus", "case-results", "team-forward"],
+    "defaultLayout": "trust-hero",
+    "effects": ["fade-in-slow", "subtle-parallax", "professional-hover"],
+    "sections": ["hero", "practice-areas", "case-results", "attorney-profiles", "testimonials", "credentials", "consultation-cta"],
+    "vibe": "Authoritative, trustworthy, established, professional, confident",
+    "typography": {
+      "heading": "'Libre Baskerville', Georgia, serif",
+      "body": "'Source Sans Pro', system-ui, sans-serif",
+      "style": "Traditional serif headlines conveying authority, clean professional body"
+    },
+    "colors": {
+      "primary": "#1a2e4a",
+      "accent": "#c9a962",
+      "secondary": "#4a5568",
+      "background": "#ffffff",
+      "text": "#1a202c",
+      "textMuted": "#4a5568"
+    },
+    "imagery": {
+      "hero": "Courthouse columns, law library, professional office",
+      "style": "Architectural shots, formal portraits, city skylines",
+      "unsplash": "law firm courthouse attorney office"
+    },
+    "visualPrompt": "Create an authoritative, trust-building law firm website. Hero should convey prestige - courthouse architecture or sophisticated office setting with dark navy overlay. Gold accent color for CTAs and highlights. Traditional serif typography for headlines. Sections: practice areas with clear icons, notable case results with statistics, attorney profiles with credentials, client testimonials, bar associations and credentials, prominent free consultation CTA. Minimal animations - subtle fades only. Professional and confident throughout."
+  },
+
+  "accounting": {
+    "name": "Accounting / CPA Firm",
+    "icon": "📊",
+    "category": "Professional Services",
+    "layouts": ["professional-hero", "services-grid", "trust-focused"],
+    "defaultLayout": "professional-hero",
+    "effects": ["fade-up", "counter-animation", "subtle-hover"],
+    "sections": ["hero", "services", "industries-served", "team", "resources", "consultation-cta"],
+    "vibe": "Precise, trustworthy, detail-oriented, reliable, knowledgeable",
+    "typography": {
+      "heading": "'Merriweather', Georgia, serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Trustworthy serif headlines, clean modern body"
+    },
+    "colors": {
+      "primary": "#1e3a5f",
+      "accent": "#2e7d32",
+      "secondary": "#37474f",
+      "background": "#f8f9fa",
+      "text": "#1a202c",
+      "textMuted": "#546e7a"
+    },
+    "imagery": {
+      "hero": "Modern office, financial charts, professional meeting",
+      "style": "Clean corporate shots, data visualization themes",
+      "unsplash": "accounting office financial professional"
+    },
+    "visualPrompt": "Create a professional, trustworthy accounting firm website. Clean, organized layout reflecting attention to detail. Hero with professional imagery and clear value proposition. Navy and green color scheme conveying stability and growth. Sections: services offered (tax, audit, advisory), industries served, team credentials with certifications, resource center/blog preview, clear CTA for free consultation. Number counter animations for statistics. Clean, minimal design."
+  },
+
+  "consulting": {
+    "name": "Business Consulting",
+    "icon": "💼",
+    "category": "Professional Services",
+    "layouts": ["results-hero", "methodology-focus", "case-study-driven"],
+    "defaultLayout": "results-hero",
+    "effects": ["fade-up", "counter-animation", "chart-animation", "hover-lift"],
+    "sections": ["hero", "services", "methodology", "case-studies", "team", "insights", "contact-cta"],
+    "vibe": "Strategic, results-driven, innovative, analytical, expert",
+    "typography": {
+      "heading": "'Poppins', sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Modern confident headlines, clean professional body"
+    },
+    "colors": {
+      "primary": "#0f172a",
+      "accent": "#3b82f6",
+      "secondary": "#6366f1",
+      "background": "#ffffff",
+      "text": "#1e293b",
+      "textMuted": "#64748b"
+    },
+    "imagery": {
+      "hero": "Strategic meeting, data analytics, modern office",
+      "style": "Professional collaboration, charts and graphs, corporate",
+      "unsplash": "business consulting strategy meeting corporate"
+    },
+    "visualPrompt": "Create a strategic, results-focused consulting website. Hero should emphasize transformation and results with bold statistics. Modern sans-serif typography throughout. Sections: service offerings with clear outcomes, methodology/approach visualization, case studies with measurable results, leadership team with expertise, insights/thought leadership blog, prominent contact CTA. Blue accent colors suggesting trust and innovation. Counter animations for key metrics."
+  },
+
+  "real-estate": {
+    "name": "Real Estate Agent / Broker",
+    "icon": "🏠",
+    "category": "Professional Services",
+    "layouts": ["listings-hero", "search-focused", "agent-brand"],
+    "defaultLayout": "listings-hero",
+    "effects": ["fade-up", "image-zoom", "map-animation", "hover-lift"],
+    "sections": ["hero-search", "featured-listings", "neighborhoods", "agent-profile", "testimonials", "market-insights", "contact"],
+    "vibe": "Local expert, trustworthy guide, dream-maker, professional",
+    "typography": {
+      "heading": "'Playfair Display', Georgia, serif",
+      "body": "'Raleway', system-ui, sans-serif",
+      "style": "Elegant headlines for luxury feel, modern clean body"
+    },
+    "colors": {
+      "primary": "#1a365d",
+      "accent": "#c9a962",
+      "secondary": "#2d3748",
+      "background": "#ffffff",
+      "text": "#1a202c",
+      "textMuted": "#4a5568"
+    },
+    "imagery": {
+      "hero": "Beautiful home exterior, interior staging, neighborhood",
+      "style": "Bright airy interiors, curb appeal shots, local landmarks",
+      "unsplash": "luxury home real estate interior modern house"
+    },
+    "visualPrompt": "Create an elegant real estate website. Hero with stunning property image and prominent search bar. Navy and gold color scheme for luxury feel. Sections: featured listings with beautiful photography, neighborhood guides, agent profile with credentials and personal touch, client testimonials, market insights/stats, contact form. Image zoom on property hover. Elegant serif headlines. Professional but approachable."
+  },
+
+  "insurance": {
+    "name": "Insurance Agency",
+    "icon": "🛡️",
+    "category": "Professional Services",
+    "layouts": ["protection-hero", "coverage-types", "trust-focused"],
+    "defaultLayout": "protection-hero",
+    "effects": ["fade-up", "icon-animation", "counter-animation"],
+    "sections": ["hero", "coverage-types", "why-us", "process", "testimonials", "quote-cta"],
+    "vibe": "Protective, reliable, family-focused, secure, caring",
+    "typography": {
+      "heading": "'Merriweather', Georgia, serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Trustworthy traditional headlines, friendly body"
+    },
+    "colors": {
+      "primary": "#1e40af",
+      "accent": "#059669",
+      "secondary": "#3b82f6",
+      "background": "#f8fafc",
+      "text": "#1e293b",
+      "textMuted": "#64748b"
+    },
+    "imagery": {
+      "hero": "Happy family, protected home, secure feeling",
+      "style": "Families, homes, peace of mind imagery",
+      "unsplash": "family protection home insurance security"
+    },
+    "visualPrompt": "Create a trustworthy, protective insurance website. Hero emphasizing peace of mind and family protection. Blue and green colors for trust and security. Sections: coverage types (auto, home, life, business) with icons, why choose us with trust badges, simple process explanation, client testimonials, prominent get-quote CTA. Warm, caring imagery of families. Professional but approachable tone."
+  },
+
+  "healthcare": {
+    "name": "Healthcare / Medical Practice",
+    "icon": "🏥",
+    "category": "Healthcare",
+    "layouts": ["care-hero", "services-grid", "provider-focus"],
+    "defaultLayout": "care-hero",
+    "effects": ["fade-up", "gentle-pulse", "smooth-scroll"],
+    "sections": ["hero", "services", "providers", "patient-info", "testimonials", "appointment-cta", "location"],
+    "vibe": "Caring, professional, trustworthy, compassionate, expert",
+    "typography": {
+      "heading": "'Nunito Sans', sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Friendly approachable headlines, clean readable body"
+    },
+    "colors": {
+      "primary": "#0369a1",
+      "accent": "#0891b2",
+      "secondary": "#059669",
+      "background": "#f0f9ff",
+      "text": "#0c4a6e",
+      "textMuted": "#64748b"
+    },
+    "imagery": {
+      "hero": "Caring doctor with patient, modern medical facility",
+      "style": "Warm medical interactions, clean clinical spaces",
+      "unsplash": "healthcare doctor patient medical clinic"
+    },
+    "visualPrompt": "Create a caring, professional healthcare website. Hero showing compassionate care - doctor with patient in warm interaction. Calming blue and teal palette. Sections: services offered with clear descriptions, provider profiles with credentials and friendly photos, patient information (forms, insurance, what to expect), testimonials, prominent appointment booking CTA, location with map. Accessible, HIPAA-conscious design. Warm and reassuring throughout."
+  },
+
+  "dental": {
+    "name": "Dental Practice",
+    "icon": "🦷",
+    "category": "Healthcare",
+    "layouts": ["smile-hero", "services-showcase", "comfort-focused"],
+    "defaultLayout": "smile-hero",
+    "effects": ["fade-up", "before-after-slider", "gentle-animations"],
+    "sections": ["hero", "services", "technology", "team", "smile-gallery", "patient-comfort", "appointment-cta"],
+    "vibe": "Friendly, gentle, modern, confidence-building, caring",
+    "typography": {
+      "heading": "'Poppins', sans-serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Friendly modern headlines, approachable body"
+    },
+    "colors": {
+      "primary": "#0284c7",
+      "accent": "#06b6d4",
+      "secondary": "#0891b2",
+      "background": "#f0fdfa",
+      "text": "#164e63",
+      "textMuted": "#64748b"
+    },
+    "imagery": {
+      "hero": "Beautiful confident smile, modern dental office",
+      "style": "Happy patients, advanced equipment, friendly staff",
+      "unsplash": "dental smile dentist modern clinic"
+    },
+    "visualPrompt": "Create a friendly, confidence-inspiring dental website. Hero featuring beautiful smile with modern office backdrop. Fresh blue and teal palette. Sections: services (general, cosmetic, orthodontics), technology/equipment highlighting modern approach, team profiles emphasizing gentle care, smile gallery with before/after, patient comfort amenities, easy appointment booking. Approachable and calming - reduce dental anxiety through design."
+  },
+
+  "chiropractic": {
+    "name": "Chiropractic / Physical Therapy",
+    "icon": "🦴",
+    "category": "Healthcare",
+    "layouts": ["wellness-hero", "treatment-focus", "results-driven"],
+    "defaultLayout": "wellness-hero",
+    "effects": ["fade-up", "body-diagram-animation", "testimonial-carousel"],
+    "sections": ["hero", "conditions-treated", "techniques", "about-doctor", "testimonials", "first-visit", "appointment-cta"],
+    "vibe": "Healing, natural, pain-relief, movement, wellness",
+    "typography": {
+      "heading": "'Quicksand', sans-serif",
+      "body": "'Lato', system-ui, sans-serif",
+      "style": "Soft friendly headlines, easy-reading body"
+    },
+    "colors": {
+      "primary": "#166534",
+      "accent": "#22c55e",
+      "secondary": "#15803d",
+      "background": "#f0fdf4",
+      "text": "#14532d",
+      "textMuted": "#4b5563"
+    },
+    "imagery": {
+      "hero": "Patient receiving adjustment, wellness and movement",
+      "style": "Active lifestyle, pain-free movement, natural healing",
+      "unsplash": "chiropractic wellness spine physical therapy"
+    },
+    "visualPrompt": "Create a healing, wellness-focused chiropractic website. Hero showing relief and movement - patient in treatment or active lifestyle. Green palette for natural healing. Sections: conditions treated with body diagram, techniques/approach explanation, doctor profile with philosophy, patient success testimonials, what to expect on first visit, easy appointment booking. Emphasize natural, drug-free healing. Welcoming and hopeful tone."
+  },
+
+  "spa-salon": {
+    "name": "Spa / Salon / Beauty",
+    "icon": "💆",
+    "category": "Healthcare",
+    "layouts": ["luxury-hero", "services-menu", "transformation-focus"],
+    "defaultLayout": "luxury-hero",
+    "effects": ["fade-in-slow", "soft-parallax", "image-reveal", "elegant-hover"],
+    "sections": ["hero", "services-menu", "signature-treatments", "team-stylists", "gallery", "gift-cards", "booking-cta"],
+    "vibe": "Luxurious, relaxing, pampering, transformative, serene",
+    "typography": {
+      "heading": "'Cormorant Garamond', Georgia, serif",
+      "body": "'Lato', system-ui, sans-serif",
+      "style": "Elegant flowing headlines, soft readable body"
+    },
+    "colors": {
+      "primary": "#701a75",
+      "accent": "#f0abfc",
+      "secondary": "#a21caf",
+      "background": "#fdf4ff",
+      "text": "#4a044e",
+      "textMuted": "#6b7280"
+    },
+    "imagery": {
+      "hero": "Serene spa environment, luxury treatment, relaxation",
+      "style": "Soft lighting, flowers, candles, elegant interiors",
+      "unsplash": "spa salon luxury beauty treatment relaxation"
+    },
+    "visualPrompt": "Create a luxurious, serene spa/salon website. Hero with dreamy spa imagery - soft lighting, elegant space. Purple and pink palette for luxury and femininity. Elegant serif headlines. Sections: service menu with pricing, signature treatments highlighted, stylist/therapist profiles, transformation gallery, gift card promotion, easy online booking. Slow, elegant animations. Evoke relaxation and pampering throughout."
+  },
+
+  "fitness": {
+    "name": "Gym / Fitness Center",
+    "icon": "🏋️",
+    "category": "Health & Wellness",
+    "layouts": ["energy-hero", "membership-tiers", "transformation-stories"],
+    "defaultLayout": "energy-hero",
+    "effects": ["fade-up-fast", "counter-animation", "video-background", "pulse-cta"],
+    "sections": ["hero", "membership-options", "classes-schedule", "amenities", "trainers", "transformations", "trial-cta"],
+    "vibe": "Energetic, motivating, powerful, community, transformation",
+    "typography": {
+      "heading": "'Oswald', sans-serif",
+      "body": "'Roboto', system-ui, sans-serif",
+      "style": "Bold impactful headlines, strong readable body"
+    },
+    "colors": {
+      "primary": "#18181b",
+      "accent": "#ef4444",
+      "secondary": "#f97316",
+      "background": "#ffffff",
+      "text": "#18181b",
+      "textMuted": "#52525b"
+    },
+    "imagery": {
+      "hero": "Intense workout, powerful athletes, energy",
+      "style": "Action shots, determination, sweat and effort",
+      "unsplash": "gym fitness workout training athletic"
+    },
+    "visualPrompt": "Create an energetic, motivating gym website. Hero with powerful workout video or action imagery. Bold dark theme with red/orange accents. Strong uppercase typography. Sections: membership tiers with clear pricing, class schedule, amenities tour, trainer profiles, member transformation stories with before/after, free trial CTA. Fast animations matching energy. Motivate action and urgency."
+  },
+
+  "yoga": {
+    "name": "Yoga / Pilates Studio",
+    "icon": "🧘",
+    "category": "Health & Wellness",
+    "layouts": ["serene-hero", "class-schedule-focus", "instructor-led"],
+    "defaultLayout": "serene-hero",
+    "effects": ["fade-in-slow", "breath-animation", "soft-parallax", "gentle-hover"],
+    "sections": ["hero", "class-types", "schedule", "instructors", "studio-tour", "pricing", "first-class-cta"],
+    "vibe": "Peaceful, balanced, mindful, welcoming, holistic",
+    "typography": {
+      "heading": "'Cormorant Garamond', Georgia, serif",
+      "body": "'Nunito', system-ui, sans-serif",
+      "style": "Flowing elegant headlines, soft approachable body"
+    },
+    "colors": {
+      "primary": "#4c1d95",
+      "accent": "#a78bfa",
+      "secondary": "#7c3aed",
+      "background": "#faf5ff",
+      "text": "#3b0764",
+      "textMuted": "#6b7280"
+    },
+    "imagery": {
+      "hero": "Peaceful yoga pose, natural light, serene studio",
+      "style": "Natural lighting, plants, calm spaces, mindful practice",
+      "unsplash": "yoga studio peaceful meditation mindfulness"
+    },
+    "visualPrompt": "Create a peaceful, welcoming yoga studio website. Hero with serene imagery - natural light, calm pose. Soft purple palette for spirituality and calm. Elegant flowing typography. Sections: class types explained, weekly schedule, instructor bios with philosophy, studio tour gallery, transparent pricing/packages, first class free CTA. Slow, breathing-pace animations. Evoke peace and mindfulness."
+  },
+
+  "saas": {
+    "name": "SaaS / Software Product",
+    "icon": "💻",
+    "category": "Technology",
+    "layouts": ["product-hero-split", "feature-showcase", "social-proof-heavy"],
+    "defaultLayout": "product-hero-split",
+    "effects": ["fade-up", "float-animation", "counter-animation", "glassmorphism", "hover-lift"],
+    "sections": ["hero", "logos-social-proof", "features", "how-it-works", "pricing", "testimonials", "integrations", "cta"],
+    "vibe": "Innovative, efficient, modern, trustworthy, powerful",
+    "typography": {
+      "heading": "'Inter', sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Clean modern headlines, tech-forward body"
+    },
+    "colors": {
+      "primary": "#0f172a",
+      "accent": "#6366f1",
+      "secondary": "#8b5cf6",
+      "background": "#ffffff",
+      "text": "#1e293b",
+      "textMuted": "#64748b"
+    },
+    "imagery": {
+      "hero": "Product screenshot, dashboard mockup, clean interface",
+      "style": "App screenshots, abstract gradients, clean tech aesthetic",
+      "unsplash": "technology software dashboard modern interface"
+    },
+    "visualPrompt": "Create a modern, trustworthy SaaS website. Hero with product screenshot on right, compelling copy on left. Social proof logo bar immediately below. Indigo/purple gradient accents. Sections: key features with icons and descriptions, how it works in 3 steps, pricing tiers with feature comparison, customer testimonials with photos, integration logos, strong CTA. Glassmorphism cards, subtle float animations. Clean, minimal, conversion-focused."
+  },
+
+  "startup": {
+    "name": "Tech Startup / Landing Page",
+    "icon": "🚀",
+    "category": "Technology",
+    "layouts": ["bold-hero", "waitlist-focus", "vision-driven"],
+    "defaultLayout": "bold-hero",
+    "effects": ["gradient-animation", "float-animation", "typing-effect", "particle-background"],
+    "sections": ["hero", "problem-solution", "features", "early-access", "team", "backed-by"],
+    "vibe": "Disruptive, bold, future-forward, ambitious, exciting",
+    "typography": {
+      "heading": "'Space Grotesk', sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Bold futuristic headlines, clean modern body"
+    },
+    "colors": {
+      "primary": "#0a0a0a",
+      "accent": "#00ff88",
+      "secondary": "#6366f1",
+      "background": "#0a0a0a",
+      "text": "#ffffff",
+      "textMuted": "#a1a1aa"
+    },
+    "imagery": {
+      "hero": "Abstract gradients, futuristic visuals, bold graphics",
+      "style": "Dark mode, neon accents, tech-forward",
+      "unsplash": "technology abstract future gradient dark"
+    },
+    "visualPrompt": "Create a bold, futuristic startup landing page. Dark theme with neon green accents. Hero with bold headline, animated gradient background, email capture for early access. Sections: problem/solution statement, key features with bold icons, early access signup with countdown, team photos, investor/backer logos. Animated gradients, particle effects, typing animations. Create excitement and urgency."
+  },
+
+  "agency": {
+    "name": "Digital / Marketing Agency",
+    "icon": "📱",
+    "category": "Technology",
+    "layouts": ["portfolio-hero", "services-creative", "case-study-driven"],
+    "defaultLayout": "portfolio-hero",
+    "effects": ["fade-up", "image-reveal", "cursor-follow", "smooth-scroll"],
+    "sections": ["hero", "services", "work-portfolio", "process", "clients", "team", "contact"],
+    "vibe": "Creative, strategic, results-driven, innovative, bold",
+    "typography": {
+      "heading": "'Syne', sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Creative bold headlines, professional body"
+    },
+    "colors": {
+      "primary": "#18181b",
+      "accent": "#f43f5e",
+      "secondary": "#ec4899",
+      "background": "#fafafa",
+      "text": "#18181b",
+      "textMuted": "#71717a"
+    },
+    "imagery": {
+      "hero": "Creative work samples, bold typography, design elements",
+      "style": "Portfolio pieces, team candids, workspace shots",
+      "unsplash": "creative agency design studio marketing"
+    },
+    "visualPrompt": "Create a bold, creative agency website. Hero showcasing best work with striking visuals. Dark and pink accent scheme. Sections: services with creative icons, portfolio grid with hover reveals, process explanation, client logos, team with personality, contact form. Creative animations - image reveals, smooth scrolling. Show creativity through the design itself."
+  },
+
+  "ecommerce": {
+    "name": "E-Commerce / Online Store",
+    "icon": "🛒",
+    "category": "Retail",
+    "layouts": ["product-hero", "category-grid", "promo-focused"],
+    "defaultLayout": "product-hero",
+    "effects": ["fade-up", "product-zoom", "cart-animation", "hover-lift"],
+    "sections": ["hero-promo", "featured-products", "categories", "bestsellers", "reviews", "newsletter", "trust-badges"],
+    "vibe": "Trustworthy, exciting, convenient, value-driven, seamless",
+    "typography": {
+      "heading": "'DM Sans', sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Clean modern headlines, easy-reading body"
+    },
+    "colors": {
+      "primary": "#111827",
+      "accent": "#f59e0b",
+      "secondary": "#10b981",
+      "background": "#ffffff",
+      "text": "#111827",
+      "textMuted": "#6b7280"
+    },
+    "imagery": {
+      "hero": "Product lifestyle shot, promotional banner",
+      "style": "Clean product photography, lifestyle contexts",
+      "unsplash": "ecommerce shopping product lifestyle"
+    },
+    "visualPrompt": "Create a conversion-focused e-commerce website. Hero with promotional banner and featured product. Sections: featured products with quick-add, category tiles with images, bestsellers carousel, customer reviews, newsletter signup with discount offer, trust badges (shipping, returns, secure). Product zoom on hover, cart animations. Clean, fast-loading aesthetic. Focus on conversion."
+  },
+
+  "subscription-box": {
+    "name": "Subscription Box Service",
+    "icon": "📦",
+    "category": "Retail",
+    "layouts": ["unboxing-hero", "whats-inside", "pricing-tiers"],
+    "defaultLayout": "unboxing-hero",
+    "effects": ["box-open-animation", "reveal-animation", "counter-animation", "hover-lift"],
+    "sections": ["hero", "how-it-works", "whats-inside", "pricing-options", "past-boxes", "testimonials", "gift-option", "subscribe-cta"],
+    "vibe": "Exciting, curated, surprising, valuable, community",
+    "typography": {
+      "heading": "'Poppins', sans-serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Fun energetic headlines, friendly body"
+    },
+    "colors": {
+      "primary": "#7c3aed",
+      "accent": "#f472b6",
+      "secondary": "#a855f7",
+      "background": "#faf5ff",
+      "text": "#1f2937",
+      "textMuted": "#6b7280"
+    },
+    "imagery": {
+      "hero": "Box opening reveal, products spilling out, excitement",
+      "style": "Unboxing moments, product flat-lays, happy subscribers",
+      "unsplash": "subscription box unboxing gift surprise"
+    },
+    "visualPrompt": "Create an exciting subscription box website. Hero with box opening reveal animation or unboxing imagery. Fun purple/pink palette. Sections: how it works in 3 steps, what's inside sample items, pricing tiers (monthly/quarterly/annual), past boxes gallery, subscriber testimonials with photos, gift subscription option, prominent subscribe CTA. Reveal animations, excitement building. Create desire and urgency."
+  },
+
+  "photography": {
+    "name": "Photographer / Photography Studio",
+    "icon": "📷",
+    "category": "Creative",
+    "layouts": ["gallery-hero", "portfolio-masonry", "booking-focused"],
+    "defaultLayout": "gallery-hero",
+    "effects": ["image-fade", "lightbox", "parallax-images", "hover-zoom"],
+    "sections": ["hero-fullscreen", "portfolio-gallery", "services", "about-photographer", "testimonials", "booking-cta"],
+    "vibe": "Artistic, emotional, storytelling, professional, authentic",
+    "typography": {
+      "heading": "'Playfair Display', Georgia, serif",
+      "body": "'Lato', system-ui, sans-serif",
+      "style": "Elegant artistic headlines, minimal body"
+    },
+    "colors": {
+      "primary": "#1f2937",
+      "accent": "#d4a574",
+      "secondary": "#374151",
+      "background": "#ffffff",
+      "text": "#1f2937",
+      "textMuted": "#6b7280"
+    },
+    "imagery": {
+      "hero": "Stunning portfolio piece, full-screen impact",
+      "style": "Best work showcased, emotional moments",
+      "unsplash": "photography portrait wedding artistic"
+    },
+    "visualPrompt": "Create a stunning photographer portfolio website. Hero with full-screen best image. Minimal text - let photos speak. Sections: masonry portfolio gallery with lightbox, services offered (wedding, portrait, commercial), about section with photographer photo, client testimonials, booking inquiry form. Image-focused design, elegant transitions. Dark and gold accents. Photography IS the design."
+  },
+
+  "wedding": {
+    "name": "Wedding / Event Planner",
+    "icon": "💒",
+    "category": "Creative",
+    "layouts": ["romantic-hero", "gallery-showcase", "services-elegant"],
+    "defaultLayout": "romantic-hero",
+    "effects": ["fade-in-slow", "soft-parallax", "image-reveal", "elegant-hover"],
+    "sections": ["hero", "services", "portfolio-gallery", "about", "testimonials", "featured-publications", "inquiry-cta"],
+    "vibe": "Romantic, elegant, dreamy, personal, celebratory",
+    "typography": {
+      "heading": "'Cormorant Garamond', Georgia, serif",
+      "body": "'Lato', system-ui, sans-serif",
+      "style": "Romantic flowing headlines, soft elegant body"
+    },
+    "colors": {
+      "primary": "#4a3728",
+      "accent": "#d4a574",
+      "secondary": "#8b7355",
+      "background": "#fdfcfb",
+      "text": "#3d3027",
+      "textMuted": "#7a6b5a"
+    },
+    "imagery": {
+      "hero": "Beautiful wedding moment, romantic setting",
+      "style": "Soft romantic imagery, elegant details, happy couples",
+      "unsplash": "wedding elegant romantic celebration"
+    },
+    "visualPrompt": "Create a romantic, elegant wedding planner website. Hero with dreamy wedding imagery, soft focus. Warm neutrals with gold accents. Elegant serif typography. Sections: services (full planning, day-of coordination, design), portfolio gallery of past weddings, about the planner with personal story, couple testimonials, featured in publications, inquiry form for consultations. Slow, romantic animations. Evoke emotion and dreams."
+  },
+
+  "portfolio": {
+    "name": "Personal Portfolio / Designer",
+    "icon": "🎨",
+    "category": "Creative",
+    "layouts": ["minimal-hero", "work-grid", "about-focused"],
+    "defaultLayout": "minimal-hero",
+    "effects": ["fade-up", "project-reveal", "cursor-follow", "smooth-scroll"],
+    "sections": ["hero", "selected-work", "about", "skills", "contact"],
+    "vibe": "Creative, personal, curated, professional, unique",
+    "typography": {
+      "heading": "'Space Grotesk', sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Bold creative headlines, clean modern body"
+    },
+    "colors": {
+      "primary": "#0a0a0a",
+      "accent": "#6366f1",
+      "secondary": "#a855f7",
+      "background": "#fafafa",
+      "text": "#0a0a0a",
+      "textMuted": "#737373"
+    },
+    "imagery": {
+      "hero": "Bold typography, minimal imagery, work samples",
+      "style": "Project screenshots, process shots, personal photos",
+      "unsplash": "design portfolio creative minimal"
+    },
+    "visualPrompt": "Create a bold, minimal portfolio website. Hero with name and title, minimal design. Sections: selected work grid with project previews that reveal on hover, about section with personal photo and story, skills/tools, simple contact with email and social links. Let the work be the star. Creative but professional. Custom cursor optional. Smooth scrolling throughout."
+  },
+
+  "nonprofit": {
+    "name": "Nonprofit / Charity",
+    "icon": "💚",
+    "category": "Organization",
+    "layouts": ["impact-hero", "mission-driven", "donation-focused"],
+    "defaultLayout": "impact-hero",
+    "effects": ["counter-animation", "fade-up", "image-reveal", "progress-bars"],
+    "sections": ["hero", "mission", "impact-stats", "programs", "stories", "team", "donate-cta", "volunteer"],
+    "vibe": "Compassionate, impactful, transparent, hopeful, community",
+    "typography": {
+      "heading": "'Nunito Sans', sans-serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Warm approachable headlines, trustworthy body"
+    },
+    "colors": {
+      "primary": "#166534",
+      "accent": "#22c55e",
+      "secondary": "#15803d",
+      "background": "#f0fdf4",
+      "text": "#14532d",
+      "textMuted": "#4b5563"
+    },
+    "imagery": {
+      "hero": "People being helped, community impact, hopeful faces",
+      "style": "Real impact photos, volunteers in action, beneficiaries",
+      "unsplash": "charity nonprofit volunteer community helping"
+    },
+    "visualPrompt": "Create an impactful, transparent nonprofit website. Hero showing real impact - people being helped, community. Green palette for hope and growth. Sections: mission statement, impact statistics with animated counters, programs offered, beneficiary stories, team/leadership, prominent donate button, volunteer opportunities. Progress bars for fundraising goals. Build trust through transparency. Evoke emotion and action."
+  },
+
+  "church": {
+    "name": "Church / Religious Organization",
+    "icon": "⛪",
+    "category": "Organization",
+    "layouts": ["welcome-hero", "service-times", "community-focused"],
+    "defaultLayout": "welcome-hero",
+    "effects": ["fade-up", "soft-parallax", "gentle-animations"],
+    "sections": ["hero", "service-times", "about-us", "ministries", "events", "sermons", "connect-cta"],
+    "vibe": "Welcoming, spiritual, community, hopeful, inclusive",
+    "typography": {
+      "heading": "'Merriweather', Georgia, serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Traditional warm headlines, welcoming body"
+    },
+    "colors": {
+      "primary": "#4338ca",
+      "accent": "#c9a962",
+      "secondary": "#6366f1",
+      "background": "#fffbeb",
+      "text": "#1e1b4b",
+      "textMuted": "#6b7280"
+    },
+    "imagery": {
+      "hero": "Welcoming congregation, beautiful sanctuary",
+      "style": "Community gathering, worship moments, fellowship",
+      "unsplash": "church community worship congregation"
+    },
+    "visualPrompt": "Create a welcoming church website. Hero with warm community image and 'You're Welcome Here' messaging. Deep purple/blue with gold accents. Sections: service times prominently displayed, about our church, ministry programs, upcoming events calendar, sermon archive or livestream, connect/visit CTA. Warm and inviting. Make visitors feel welcome before they arrive."
+  },
+
+  "school": {
+    "name": "School / Educational Institution",
+    "icon": "🏫",
+    "category": "Education",
+    "layouts": ["campus-hero", "programs-showcase", "enrollment-focused"],
+    "defaultLayout": "campus-hero",
+    "effects": ["fade-up", "counter-animation", "image-gallery", "hover-lift"],
+    "sections": ["hero", "programs", "campus-life", "achievements", "faculty", "admissions", "events", "apply-cta"],
+    "vibe": "Inspiring, nurturing, excellent, community, future-focused",
+    "typography": {
+      "heading": "'Libre Baskerville', Georgia, serif",
+      "body": "'Source Sans Pro', system-ui, sans-serif",
+      "style": "Traditional academic headlines, clear body"
+    },
+    "colors": {
+      "primary": "#1e3a5f",
+      "accent": "#b91c1c",
+      "secondary": "#0369a1",
+      "background": "#f8fafc",
+      "text": "#1e293b",
+      "textMuted": "#64748b"
+    },
+    "imagery": {
+      "hero": "Beautiful campus, students learning, achievement",
+      "style": "Campus grounds, classroom engagement, graduation",
+      "unsplash": "school campus education students learning"
+    },
+    "visualPrompt": "Create an inspiring school website. Hero with beautiful campus or engaged students. Traditional navy and red school colors. Sections: academic programs, campus life gallery, achievements and statistics, faculty highlights, admissions process, upcoming events, apply now CTA. Counter animations for statistics. Build pride and trust. Inspire prospective families."
+  },
+
+  "online-course": {
+    "name": "Online Course / E-Learning",
+    "icon": "🎓",
+    "category": "Education",
+    "layouts": ["course-hero", "curriculum-preview", "instructor-focus"],
+    "defaultLayout": "course-hero",
+    "effects": ["fade-up", "progress-animation", "video-preview", "hover-lift"],
+    "sections": ["hero", "what-youll-learn", "curriculum", "instructor", "testimonials", "pricing", "faq", "enroll-cta"],
+    "vibe": "Transformative, expert-led, accessible, valuable, results-focused",
+    "typography": {
+      "heading": "'Poppins', sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Modern confident headlines, clean body"
+    },
+    "colors": {
+      "primary": "#0f172a",
+      "accent": "#f59e0b",
+      "secondary": "#6366f1",
+      "background": "#ffffff",
+      "text": "#1e293b",
+      "textMuted": "#64748b"
+    },
+    "imagery": {
+      "hero": "Course preview, instructor teaching, transformation",
+      "style": "Video thumbnails, learning in action, results",
+      "unsplash": "online learning education course teaching"
+    },
+    "visualPrompt": "Create a compelling online course landing page. Hero with course title, instructor, and video preview button. Sections: what you'll learn bullet points, full curriculum with module breakdown, instructor bio with credentials, student testimonials with results, pricing with guarantee, FAQ accordion, strong enroll CTA. Build desire and trust. Overcome objections. Drive enrollment."
+  },
+
+  "construction": {
+    "name": "Construction / Contractor",
+    "icon": "🔨",
+    "category": "Trade Services",
+    "layouts": ["project-hero", "services-grid", "portfolio-showcase"],
+    "defaultLayout": "project-hero",
+    "effects": ["fade-up", "before-after-slider", "counter-animation", "hover-lift"],
+    "sections": ["hero", "services", "projects-portfolio", "process", "about", "testimonials", "quote-cta"],
+    "vibe": "Reliable, skilled, quality craftsmanship, trustworthy, experienced",
+    "typography": {
+      "heading": "'Oswald', sans-serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Strong bold headlines, straightforward body"
+    },
+    "colors": {
+      "primary": "#1c1917",
+      "accent": "#f59e0b",
+      "secondary": "#78350f",
+      "background": "#fafaf9",
+      "text": "#1c1917",
+      "textMuted": "#57534e"
+    },
+    "imagery": {
+      "hero": "Impressive completed project, construction in action",
+      "style": "Before/after shots, team at work, quality details",
+      "unsplash": "construction contractor building renovation"
+    },
+    "visualPrompt": "Create a professional construction company website. Hero with impressive completed project. Bold typography with yellow/orange accents. Sections: services offered, project portfolio with before/after sliders, our process explained, about the company and team, client testimonials, free quote CTA. Show quality craftsmanship through imagery. Build trust for big investment decisions."
+  },
+
+  "plumber": {
+    "name": "Plumber / HVAC",
+    "icon": "🔧",
+    "category": "Trade Services",
+    "layouts": ["emergency-hero", "services-quick", "trust-focused"],
+    "defaultLayout": "emergency-hero",
+    "effects": ["fade-up", "phone-pulse", "badge-animation"],
+    "sections": ["hero", "services", "emergency-banner", "service-areas", "about", "reviews", "call-cta"],
+    "vibe": "Reliable, fast, professional, licensed, trustworthy",
+    "typography": {
+      "heading": "'Roboto', sans-serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Clear strong headlines, easy-reading body"
+    },
+    "colors": {
+      "primary": "#1e40af",
+      "accent": "#ef4444",
+      "secondary": "#1d4ed8",
+      "background": "#f8fafc",
+      "text": "#1e293b",
+      "textMuted": "#64748b"
+    },
+    "imagery": {
+      "hero": "Professional technician, service van, happy customer",
+      "style": "Uniformed professionals, clean equipment, satisfied customers",
+      "unsplash": "plumber technician home service professional"
+    },
+    "visualPrompt": "Create a trustworthy plumber/HVAC website. Hero with prominent phone number and emergency service highlight. Blue and red color scheme. Sections: services with icons, emergency 24/7 banner, service areas map or list, about us with licenses and insurance, Google reviews integration, click-to-call CTA throughout. Build trust quickly - people call in emergencies. Licensed and insured badges prominent."
+  },
+
+  "electrician": {
+    "name": "Electrician",
+    "icon": "⚡",
+    "category": "Trade Services",
+    "layouts": ["service-hero", "residential-commercial", "safety-focused"],
+    "defaultLayout": "service-hero",
+    "effects": ["fade-up", "spark-animation", "badge-animation"],
+    "sections": ["hero", "services", "residential", "commercial", "safety", "about", "reviews", "contact-cta"],
+    "vibe": "Safe, licensed, professional, reliable, expert",
+    "typography": {
+      "heading": "'Roboto', sans-serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Clear professional headlines, straightforward body"
+    },
+    "colors": {
+      "primary": "#1c1917",
+      "accent": "#eab308",
+      "secondary": "#facc15",
+      "background": "#fafaf9",
+      "text": "#1c1917",
+      "textMuted": "#57534e"
+    },
+    "imagery": {
+      "hero": "Electrician working safely, modern electrical panel",
+      "style": "Professional work, safety gear, quality installations",
+      "unsplash": "electrician electrical work professional"
+    },
+    "visualPrompt": "Create a professional electrician website. Hero emphasizing safety and licensing with phone number. Black and yellow electrical colors. Sections: services for residential and commercial, safety certifications, about company and team, customer reviews, easy contact. Licensed, bonded, insured badges prominent. Safety messaging throughout. Build trust for a trade that requires certification."
+  },
+
+  "landscaping": {
+    "name": "Landscaping / Lawn Care",
+    "icon": "🌿",
+    "category": "Trade Services",
+    "layouts": ["transformation-hero", "services-seasonal", "portfolio-showcase"],
+    "defaultLayout": "transformation-hero",
+    "effects": ["fade-up", "before-after-slider", "seasonal-animation"],
+    "sections": ["hero", "services", "portfolio", "seasonal-programs", "about", "testimonials", "quote-cta"],
+    "vibe": "Natural, transformative, reliable, detail-oriented, seasonal",
+    "typography": {
+      "heading": "'Quicksand', sans-serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Fresh friendly headlines, clean body"
+    },
+    "colors": {
+      "primary": "#166534",
+      "accent": "#84cc16",
+      "secondary": "#15803d",
+      "background": "#f0fdf4",
+      "text": "#14532d",
+      "textMuted": "#4b5563"
+    },
+    "imagery": {
+      "hero": "Beautiful landscaped yard, dramatic before/after",
+      "style": "Lush lawns, garden designs, outdoor living spaces",
+      "unsplash": "landscaping garden lawn outdoor beautiful"
+    },
+    "visualPrompt": "Create a fresh, natural landscaping website. Hero with stunning yard transformation or beautiful property. Green color palette throughout. Sections: services (lawn care, design, hardscaping), portfolio with before/after sliders, seasonal programs, about the team, testimonials, free estimate CTA. Show dramatic transformations. Appeal to homeowner pride."
+  },
+
+  "cleaning": {
+    "name": "Cleaning Service",
+    "icon": "🧹",
+    "category": "Trade Services",
+    "layouts": ["fresh-hero", "services-packages", "booking-easy"],
+    "defaultLayout": "fresh-hero",
+    "effects": ["fade-up", "sparkle-animation", "checklist-animation"],
+    "sections": ["hero", "services", "pricing-packages", "checklist", "about", "reviews", "book-cta"],
+    "vibe": "Fresh, reliable, thorough, trustworthy, convenient",
+    "typography": {
+      "heading": "'Poppins', sans-serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Clean modern headlines, friendly body"
+    },
+    "colors": {
+      "primary": "#0891b2",
+      "accent": "#06b6d4",
+      "secondary": "#0e7490",
+      "background": "#ecfeff",
+      "text": "#164e63",
+      "textMuted": "#64748b"
+    },
+    "imagery": {
+      "hero": "Sparkling clean home, happy homeowner, professional cleaner",
+      "style": "Clean bright spaces, organized homes, smiling staff",
+      "unsplash": "cleaning service clean home professional"
+    },
+    "visualPrompt": "Create a fresh, trustworthy cleaning service website. Hero with sparkling clean space and easy booking CTA. Fresh blue/cyan palette. Sections: services offered, pricing packages (one-time, weekly, monthly), cleaning checklist showing thoroughness, about the team with background checks mentioned, reviews, easy online booking. Trustworthy and convenient. Show the transformation to clean."
+  },
+
+  "auto-repair": {
+    "name": "Auto Repair / Mechanic",
+    "icon": "🚗",
+    "category": "Trade Services",
+    "layouts": ["shop-hero", "services-quick", "trust-certified"],
+    "defaultLayout": "shop-hero",
+    "effects": ["fade-up", "badge-animation", "counter-animation"],
+    "sections": ["hero", "services", "certifications", "about", "reviews", "specials", "appointment-cta"],
+    "vibe": "Trustworthy, honest, skilled, certified, fair-priced",
+    "typography": {
+      "heading": "'Oswald', sans-serif",
+      "body": "'Roboto', system-ui, sans-serif",
+      "style": "Bold strong headlines, clear body"
+    },
+    "colors": {
+      "primary": "#18181b",
+      "accent": "#dc2626",
+      "secondary": "#ef4444",
+      "background": "#fafafa",
+      "text": "#18181b",
+      "textMuted": "#52525b"
+    },
+    "imagery": {
+      "hero": "Professional shop, certified technician, quality work",
+      "style": "Clean shop environment, diagnostic equipment, happy customers",
+      "unsplash": "auto repair mechanic car service shop"
+    },
+    "visualPrompt": "Create a trustworthy auto repair website. Hero with professional shop image and appointment CTA. Black and red color scheme. Sections: services with common repairs, certifications (ASE, dealer-trained), about shop history, Google reviews, current specials/coupons, easy appointment scheduling. Overcome distrust of mechanics through transparency and credentials. Fair pricing messaging."
+  },
+
+  "pet-services": {
+    "name": "Pet Services / Grooming / Vet",
+    "icon": "🐾",
+    "category": "Pet Industry",
+    "layouts": ["friendly-hero", "services-pets", "care-focused"],
+    "defaultLayout": "friendly-hero",
+    "effects": ["fade-up", "bounce-animation", "paw-prints", "hover-lift"],
+    "sections": ["hero", "services", "team", "gallery", "testimonials", "booking-cta"],
+    "vibe": "Loving, playful, professional, caring, trustworthy",
+    "typography": {
+      "heading": "'Quicksand', sans-serif",
+      "body": "'Nunito', system-ui, sans-serif",
+      "style": "Friendly rounded headlines, warm body"
+    },
+    "colors": {
+      "primary": "#7c3aed",
+      "accent": "#f472b6",
+      "secondary": "#a855f7",
+      "background": "#faf5ff",
+      "text": "#4c1d95",
+      "textMuted": "#6b7280"
+    },
+    "imagery": {
+      "hero": "Happy pets, caring staff, clean facility",
+      "style": "Cute pet photos, grooming transformations, happy pet parents",
+      "unsplash": "pet grooming dog cat veterinary cute"
+    },
+    "visualPrompt": "Create a friendly, trustworthy pet services website. Hero with adorable pets and caring staff. Purple and pink playful palette. Sections: services (grooming, boarding, daycare), team with pet lovers, cute pet gallery, testimonials from pet parents, easy booking. Playful but professional. Pet parents need to trust you with their fur babies. Show the love."
+  },
+
+  "moving": {
+    "name": "Moving Company",
+    "icon": "🚚",
+    "category": "Services",
+    "layouts": ["action-hero", "services-packages", "quote-focused"],
+    "defaultLayout": "action-hero",
+    "effects": ["fade-up", "truck-animation", "counter-animation", "checklist-animation"],
+    "sections": ["hero", "services", "moving-tips", "pricing", "service-areas", "reviews", "quote-cta"],
+    "vibe": "Reliable, careful, efficient, stress-free, professional",
+    "typography": {
+      "heading": "'Roboto', sans-serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Strong dependable headlines, clear body"
+    },
+    "colors": {
+      "primary": "#1e40af",
+      "accent": "#f97316",
+      "secondary": "#3b82f6",
+      "background": "#f8fafc",
+      "text": "#1e293b",
+      "textMuted": "#64748b"
+    },
+    "imagery": {
+      "hero": "Professional movers, truck, careful handling",
+      "style": "Team in action, protected furniture, happy new homeowners",
+      "unsplash": "moving company truck movers boxes"
+    },
+    "visualPrompt": "Create a reliable, stress-reducing moving company website. Hero with professional team and instant quote CTA. Blue and orange color scheme. Sections: services (local, long-distance, packing), moving tips/checklist, transparent pricing, service areas, reviews emphasizing care and reliability, free quote form. Address moving anxiety. Show careful handling and professionalism."
+  },
+
+  "event-venue": {
+    "name": "Event Venue / Banquet Hall",
+    "icon": "🎪",
+    "category": "Events",
+    "layouts": ["venue-hero", "spaces-showcase", "event-types"],
+    "defaultLayout": "venue-hero",
+    "effects": ["fade-in-slow", "gallery-lightbox", "parallax-venue", "elegant-hover"],
+    "sections": ["hero", "spaces", "event-types", "packages", "gallery", "testimonials", "tour-cta"],
+    "vibe": "Elegant, versatile, memorable, professional, stunning",
+    "typography": {
+      "heading": "'Playfair Display', Georgia, serif",
+      "body": "'Lato', system-ui, sans-serif",
+      "style": "Elegant sophisticated headlines, refined body"
+    },
+    "colors": {
+      "primary": "#1f2937",
+      "accent": "#d4a574",
+      "secondary": "#374151",
+      "background": "#fdfcfb",
+      "text": "#1f2937",
+      "textMuted": "#6b7280"
+    },
+    "imagery": {
+      "hero": "Stunning venue setup, elegant event in progress",
+      "style": "Beautiful spaces, wedding setups, corporate events",
+      "unsplash": "event venue wedding ballroom elegant"
+    },
+    "visualPrompt": "Create an elegant event venue website. Hero with stunning venue photography - dramatic lighting, beautiful setup. Gold accents on dark backgrounds. Sections: available spaces with capacity, event types hosted (weddings, corporate, galas), packages and pricing, photo gallery with different setups, testimonials, schedule tour CTA. Showcase versatility and elegance. Help visitors envision their event."
+  },
+
+  "hotel": {
+    "name": "Hotel / Hospitality",
+    "icon": "🏨",
+    "category": "Hospitality",
+    "layouts": ["destination-hero", "rooms-showcase", "amenities-rich"],
+    "defaultLayout": "destination-hero",
+    "effects": ["fade-in-slow", "parallax-rooms", "gallery-lightbox", "smooth-scroll"],
+    "sections": ["hero", "rooms-suites", "amenities", "dining", "location", "reviews", "book-cta"],
+    "vibe": "Luxurious, welcoming, restful, experiential, memorable",
+    "typography": {
+      "heading": "'Cormorant Garamond', Georgia, serif",
+      "body": "'Lato', system-ui, sans-serif",
+      "style": "Luxurious elegant headlines, refined body"
+    },
+    "colors": {
+      "primary": "#1a365d",
+      "accent": "#c9a962",
+      "secondary": "#2d3748",
+      "background": "#fffefa",
+      "text": "#1a202c",
+      "textMuted": "#4a5568"
+    },
+    "imagery": {
+      "hero": "Stunning property view, luxury room, destination",
+      "style": "Beautiful rooms, amenities, location highlights",
+      "unsplash": "luxury hotel room resort hospitality"
+    },
+    "visualPrompt": "Create a luxurious hotel website. Hero with stunning property or room view, booking date picker overlay. Navy and gold luxury palette. Sections: room types with galleries, amenities (pool, spa, gym), dining options, location and attractions, guest reviews, prominent book now CTA. Evoke the experience. Make visitors want to be there. Easy booking flow."
+  },
+
+  "travel": {
+    "name": "Travel Agency / Tours",
+    "icon": "✈️",
+    "category": "Hospitality",
+    "layouts": ["destination-hero", "package-showcase", "inspiration-driven"],
+    "defaultLayout": "destination-hero",
+    "effects": ["parallax-destinations", "fade-up", "map-animation", "hover-lift"],
+    "sections": ["hero", "featured-trips", "destinations", "why-us", "testimonials", "newsletter", "inquiry-cta"],
+    "vibe": "Adventurous, inspiring, expert, seamless, life-changing",
+    "typography": {
+      "heading": "'Playfair Display', Georgia, serif",
+      "body": "'Open Sans', system-ui, sans-serif",
+      "style": "Inspiring elegant headlines, easy-reading body"
+    },
+    "colors": {
+      "primary": "#0c4a6e",
+      "accent": "#f59e0b",
+      "secondary": "#0369a1",
+      "background": "#f0f9ff",
+      "text": "#0c4a6e",
+      "textMuted": "#64748b"
+    },
+    "imagery": {
+      "hero": "Breathtaking destination, travel moment",
+      "style": "Stunning landscapes, cultural experiences, happy travelers",
+      "unsplash": "travel destination adventure landscape tourism"
+    },
+    "visualPrompt": "Create an inspiring travel agency website. Hero with breathtaking destination imagery that makes visitors want to go now. Blue and gold color scheme. Sections: featured trip packages, destination categories, why book with us, traveler testimonials with trip photos, newsletter for deals, trip inquiry form. Inspire wanderlust. Make booking easy. Show transformative experiences."
+  },
+
+  "musician": {
+    "name": "Musician / Band / Artist",
+    "icon": "🎸",
+    "category": "Entertainment",
+    "layouts": ["artist-hero", "music-player", "tour-dates"],
+    "defaultLayout": "artist-hero",
+    "effects": ["parallax-artist", "audio-visualizer", "fade-up", "hover-glow"],
+    "sections": ["hero", "music-player", "tour-dates", "about", "videos", "merch", "contact"],
+    "vibe": "Authentic, creative, energetic, engaging, unique",
+    "typography": {
+      "heading": "'Bebas Neue', sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Bold artistic headlines, modern body"
+    },
+    "colors": {
+      "primary": "#0a0a0a",
+      "accent": "#ef4444",
+      "secondary": "#7c3aed",
+      "background": "#0a0a0a",
+      "text": "#ffffff",
+      "textMuted": "#a1a1aa"
+    },
+    "imagery": {
+      "hero": "Artist performing, artistic photo, album art",
+      "style": "Live performance, studio shots, artistic expression",
+      "unsplash": "musician band artist performance concert"
+    },
+    "visualPrompt": "Create an engaging musician/band website. Dark theme with bold accent colors. Hero with striking artist image. Sections: embedded music player or Spotify integration, upcoming tour dates with ticket links, band bio/story, music videos, merch store link, contact/booking form. The design should reflect the artist's vibe. Bold, creative, memorable."
+  },
+
+  "podcast": {
+    "name": "Podcast / Content Creator",
+    "icon": "🎙️",
+    "category": "Entertainment",
+    "layouts": ["show-hero", "episodes-grid", "host-focused"],
+    "defaultLayout": "show-hero",
+    "effects": ["fade-up", "audio-wave", "episode-hover", "subscribe-pulse"],
+    "sections": ["hero", "latest-episodes", "about-show", "host", "subscribe-platforms", "sponsors", "contact"],
+    "vibe": "Engaging, authentic, conversational, valuable, consistent",
+    "typography": {
+      "heading": "'Space Grotesk', sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Modern bold headlines, clean body"
+    },
+    "colors": {
+      "primary": "#18181b",
+      "accent": "#8b5cf6",
+      "secondary": "#a855f7",
+      "background": "#fafafa",
+      "text": "#18181b",
+      "textMuted": "#71717a"
+    },
+    "imagery": {
+      "hero": "Podcast artwork, host with microphone, studio setup",
+      "style": "Behind the scenes, host personality, episode artwork",
+      "unsplash": "podcast microphone audio studio creator"
+    },
+    "visualPrompt": "Create an engaging podcast website. Hero with podcast artwork and subscribe buttons. Sections: latest episodes with embedded players, about the show description, host bio with personality, subscribe links to all platforms (Apple, Spotify, etc.), sponsors/partners, contact for guests or sponsorship. Make episodes easy to find and play. Build host connection."
+  },
+
+  "finance": {
+    "name": "Finance / Investment Firm",
+    "icon": "💹",
+    "category": "Professional Services",
+    "layouts": ["trust-hero", "services-grid", "credentials-focus"],
+    "defaultLayout": "trust-hero",
+    "effects": ["fade-in-slow", "counter-animation", "subtle-parallax", "glassmorphism"],
+    "sections": ["hero", "services", "track-record", "team", "insights", "contact-cta"],
+    "vibe": "Sophisticated, trustworthy, data-driven, exclusive, authoritative",
+    "typography": {
+      "heading": "'Inter', sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Clean modern headlines, professional body"
+    },
+    "colors": {
+      "primary": "#0f172a",
+      "accent": "#6366f1",
+      "secondary": "#8b5cf6",
+      "background": "#ffffff",
+      "text": "#1e293b",
+      "textMuted": "#64748b",
+      "surface": "#f8fafc"
+    },
+    "imagery": {
+      "hero": "Abstract data visualization, city skyline, modern office",
+      "style": "Clean charts, professional environments, subtle tech elements",
+      "unsplash": "finance investment trading data analytics"
+    },
+    "visualPrompt": "Create a sophisticated, trust-building investment firm website. Hero should feature gradient background with floating UI elements showing portfolio performance metrics. Clean, minimal design with navy/indigo accents. Sections: investment services with clear value propositions, track record with animated statistics, leadership team with credentials, market insights/thought leadership, prominent consultation CTA. Use glassmorphism cards for data displays. Convey expertise and exclusivity without being stuffy. Modern fintech aesthetic."
+  },
+
+  "gaming": {
+    "name": "Gaming / Esports",
+    "icon": "🎮",
+    "category": "Entertainment",
+    "layouts": ["gaming-hero-dark", "stream-focused", "team-showcase"],
+    "defaultLayout": "gaming-hero-dark",
+    "effects": ["glitch-effect", "neon-glow", "particle-background", "hover-lift"],
+    "sections": ["hero", "stream-embed", "team-roster", "schedule", "sponsors", "merch", "community"],
+    "vibe": "Intense, competitive, community-driven, exciting, skilled",
+    "typography": {
+      "heading": "'Orbitron', sans-serif",
+      "body": "'Rajdhani', system-ui, sans-serif",
+      "style": "Futuristic gaming headlines, tech body"
+    },
+    "colors": {
+      "primary": "#0a0a0a",
+      "accent": "#00ff88",
+      "secondary": "#8b5cf6",
+      "background": "#0a0a0a",
+      "text": "#ffffff",
+      "textMuted": "#a1a1aa"
+    },
+    "imagery": {
+      "hero": "Gaming setup, esports competition, team photo",
+      "style": "RGB lighting, gaming gear, competition moments",
+      "unsplash": "gaming esports neon computer setup"
+    },
+    "visualPrompt": "Create an intense esports/gaming website. Dark theme with neon accents (green, purple). Hero with team branding or stream preview. Glitch effects and particle backgrounds. Sections: live stream embed, team roster with player cards, match schedule, sponsor logos, merch store, Discord community link. Fast-feeling, intense, competitive energy throughout."
+  },
+  "collectibles": {
+    "name": "Collectibles / NFTs / Trading Cards",
+    "icon": "🃏",
+    "category": "Collectibles",
+    "layouts": ["portfolio-hero", "collection-grid", "dashboard-focus"],
+    "defaultLayout": "portfolio-hero",
+    "effects": ["fade-up", "card-flip", "counter-animation", "hover-lift", "glassmorphism"],
+    "sections": ["hero", "collection-stats", "featured-items", "portfolio-value", "recent-activity", "marketplace"],
+    "vibe": "Premium, collector-focused, data-rich, modern, valuable",
+    "terminology": {
+      "customer": "Collector",
+      "order": "Acquisition",
+      "product": "Item",
+      "inventory": "Collection",
+      "cart": "Watchlist",
+      "checkout": "Purchase",
+      "transaction": "Activity"
+    },
+    "typography": {
+      "heading": "'Inter', system-ui, sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Clean modern headlines, data-friendly body"
+    },
+    "colors": {
+      "primary": "#0f172a",
+      "accent": "#8b5cf6",
+      "secondary": "#6366f1",
+      "background": "#0a0a1a",
+      "text": "#ffffff",
+      "textMuted": "#94a3b8",
+      "success": "#22c55e",
+      "warning": "#f59e0b"
+    },
+    "imagery": {
+      "hero": "Premium collectibles, digital art, trading cards, portfolio view",
+      "style": "Dark premium backgrounds, glowing accents, card displays",
+      "unsplash": "nft digital art trading cards collectibles"
+    },
+    "modules": {
+      "backend": ["auth", "collections", "ai-scanner", "ebay-integration", "marketplace", "portfolio"],
+      "frontend": ["collection-grid", "item-detail", "image-gallery", "search-filter", "stat-cards"]
+    },
+    "features": {
+      "aiScanning": true,
+      "priceTracking": true,
+      "portfolio": true,
+      "marketplace": true,
+      "nfcTags": true,
+      "grading": true
+    },
+    "visualPrompt": "Create a premium collectibles/NFT portfolio platform. Dark theme with purple/indigo accents. Hero shows portfolio value with animated counter. Dashboard displays: total collection value, item count, profit/loss, recent price changes. Collection grid with card images, prices, and quick actions. Support for sports cards, NFTs, Pokemon, and other collectibles. AI scanning feature highlight. Floor price integration (eBay for physical, OpenSea for NFTs). Premium, data-rich, collector-focused design."
+  },
+
+  "survey-rewards": {
+    "name": "Survey & Rewards Platform",
+    "icon": "💰",
+    "category": "Fintech",
+    "layouts": ["rewards-hero-dark", "dashboard-focus", "mobile-first"],
+    "defaultLayout": "rewards-hero-dark",
+    "effects": ["gradient-glow", "confetti-burst", "counter-animation", "pulse-highlight"],
+    "sections": ["hero", "balance-display", "daily-spin", "surveys", "achievements", "leaderboard", "cashout"],
+    "vibe": "Exciting, rewarding, trustworthy, gamified, instant gratification",
+    "terminology": {
+      "customer": "Member",
+      "order": "Earning",
+      "product": "Survey",
+      "inventory": "Available Surveys",
+      "cart": "Balance",
+      "checkout": "Cash Out",
+      "transaction": "Activity"
+    },
+    "typography": {
+      "heading": "'Inter', system-ui, sans-serif",
+      "body": "'Inter', system-ui, sans-serif",
+      "style": "Clean modern headlines, highly readable body"
+    },
+    "colors": {
+      "primary": "#0a0a1a",
+      "accent": "#00e676",
+      "secondary": "#00b0ff",
+      "background": "#0a0a1a",
+      "text": "#ffffff",
+      "textMuted": "#888888",
+      "success": "#00e676",
+      "warning": "#ff9100",
+      "danger": "#ef4444"
+    },
+    "imagery": {
+      "hero": "Person on phone earning money, cash flowing, happy user",
+      "style": "Mobile-first, money imagery, celebratory moments",
+      "unsplash": "mobile money earning celebration success"
+    },
+    "modules": {
+      "backend": ["auth", "surveys", "streaks", "daily-spin", "achievements", "user-balance", "cashouts", "notifications", "analytics"],
+      "frontend": ["login-form", "register-form", "spin-wheel", "streak-tracker", "survey-card", "balance-display", "level-progress", "stat-cards", "business-admin"]
+    },
+    "features": {
+      "dailySpin": true,
+      "streaks": true,
+      "achievements": true,
+      "levels": true,
+      "referrals": true,
+      "leaderboard": true,
+      "multiCurrency": true,
+      "multiLanguage": true
+    },
+    "visualPrompt": "Create a gamified rewards platform where users earn money. Dark theme with vibrant green (#00e676) and blue (#00b0ff) accents. Mobile-first design. Hero shows big balance counter and call-to-action. Dashboard with: prominent balance display, daily spin wheel, streak tracker, available surveys grid, achievements section, level progress bar. Make it feel exciting and rewarding - every action should feel like winning. Confetti on earnings, smooth animations, instant feedback. Trust signals: fast payouts, real money, millions earned."
+  }
+}

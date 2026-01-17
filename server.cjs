@@ -160,7 +160,7 @@ async function initializeServices() {
 }
 
 // Load prompt configs
-const PROMPTS_DIR = path.join(__dirname, '..', 'prompts');
+const PROMPTS_DIR = path.join(__dirname, 'prompts');
 const INDUSTRIES = JSON.parse(fs.readFileSync(path.join(PROMPTS_DIR, 'industries.json'), 'utf-8'));
 const LAYOUTS = JSON.parse(fs.readFileSync(path.join(PROMPTS_DIR, 'layouts.json'), 'utf-8'));
 const EFFECTS = JSON.parse(fs.readFileSync(path.join(PROMPTS_DIR, 'effects.json'), 'utf-8'));
