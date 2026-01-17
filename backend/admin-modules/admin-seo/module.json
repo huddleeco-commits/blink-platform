@@ -1,0 +1,33 @@
+{
+  "name": "admin-seo",
+  "version": "1.0.0",
+  "description": "SEO management, meta tags, and sitemap configuration",
+  "tier": "pro",
+  "category": "marketing",
+  "icon": "Search",
+  "order": 12,
+  "dependencies": ["admin-dashboard", "admin-content"],
+  "requiredTables": ["seo_settings", "pages"],
+  "features": [
+    "Page meta title/description",
+    "Open Graph settings",
+    "Twitter card settings",
+    "Sitemap generation",
+    "Robots.txt management",
+    "Canonical URLs",
+    "Schema markup",
+    "SEO score/recommendations"
+  ],
+  "routes": {
+    "prefix": "/seo",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/SeoPage.jsx",
+    "sidebar": {
+      "id": "seo",
+      "label": "SEO",
+      "icon": "Search"
+    }
+  }
+}

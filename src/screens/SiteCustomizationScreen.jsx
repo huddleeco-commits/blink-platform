@@ -3,8 +3,9 @@
  * Full website customization form with industry-specific options
  */
 
-import React, { useState } from 'react';
-import { INDUSTRY_PAGES, PAGE_LABELS, COLOR_PRESETS, STYLE_OPTIONS, ADMIN_LEVELS } from '../constants';
+import React, { useState, useEffect } from 'react';
+import { INDUSTRY_PAGES, PAGE_LABELS, COLOR_PRESETS, STYLE_OPTIONS, ADMIN_LEVELS, API_BASE } from '../constants';
+import AdminTierSelector from '../components/AdminTierSelector';
 
 function getIndustryPageCategory(ind) {
   if (!ind) return 'default';
@@ -319,7 +320,8 @@ export function SiteCustomizationScreen({
   const [brandColor, setBrandColor] = useState(sharedContext?.brandColor || '#3b82f6');
   const [style, setStyle] = useState(sharedContext?.style || 'modern');
   const [logo, setLogo] = useState(sharedContext?.logo || null);
-  const [adminLevel, setAdminLevel] = useState('standard');
+  const [adminTier, setAdminTier] = useState(sharedContext?.adminTier || null);
+  const [adminModules, setAdminModules] = useState(sharedContext?.adminModules || []);
   const [dragOver, setDragOver] = useState(false);
 
   // Get page config for this industry
@@ -366,7 +368,9 @@ export function SiteCustomizationScreen({
         industryDisplay,
         style,
         logo,
-        tagline
+        tagline,
+        adminTier,
+        adminModules
       });
     }
     // Call generate with all config
@@ -378,7 +382,8 @@ export function SiteCustomizationScreen({
       style,
       logo,
       selectedPages,
-      adminLevel,
+      adminTier: adminTier || 'standard',
+      adminModules,
       industry,
       industryDisplay
     });
@@ -570,25 +575,17 @@ export function SiteCustomizationScreen({
           </div>
         </div>
 
-        {/* Admin Level */}
+        {/* Admin Dashboard */}
         <div style={customStyles.section}>
-          <span style={customStyles.sectionTitle}>Admin Dashboard Level</span>
-          <div style={customStyles.adminOptions}>
-            {ADMIN_LEVELS.map((level) => (
-              <div
-                key={level.key}
-                style={{
-                  ...customStyles.adminOption,
-                  ...(adminLevel === level.key ? customStyles.adminOptionSelected : {})
-                }}
-                onClick={() => setAdminLevel(level.key)}
-              >
-                {level.recommended && <span style={customStyles.recommendedBadge}>Recommended</span>}
-                <div style={customStyles.adminLabel}>{level.label}</div>
-                <div style={customStyles.adminDesc}>{level.description}</div>
-              </div>
-            ))}
-          </div>
+          <span style={customStyles.sectionTitle}>Admin Dashboard</span>
+          <AdminTierSelector
+            industry={industry}
+            businessDescription={`${businessName} ${tagline} ${location}`}
+            selectedTier={adminTier}
+            selectedModules={adminModules}
+            onTierChange={setAdminTier}
+            onModulesChange={setAdminModules}
+          />
         </div>
 
         {/* Actions */}

@@ -1,0 +1,32 @@
+{
+  "name": "admin-content",
+  "version": "1.0.0",
+  "description": "Content management for pages, text, images, and media",
+  "tier": "lite",
+  "category": "content",
+  "icon": "FileText",
+  "order": 3,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["pages", "media"],
+  "features": [
+    "Page content editor",
+    "Text editing with rich formatting",
+    "Image upload and management",
+    "Media library",
+    "Content versioning",
+    "Preview changes",
+    "Publish/unpublish pages"
+  ],
+  "routes": {
+    "prefix": "/content",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/ContentPage.jsx",
+    "sidebar": {
+      "id": "content",
+      "label": "Content",
+      "icon": "FileText"
+    }
+  }
+}

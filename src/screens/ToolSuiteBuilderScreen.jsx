@@ -240,6 +240,49 @@ const suiteStyles = {
     borderTop: '3px solid #8b5cf6',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite'
+  },
+  styleGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  styleOption: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '14px 16px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '2px solid #e2e8f0',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+  styleOptionSelected: {
+    borderColor: '#8b5cf6',
+    background: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)',
+    boxShadow: '0 2px 8px rgba(139, 92, 246, 0.15)'
+  },
+  styleIcon: {
+    fontSize: '1.5rem',
+    width: '40px',
+    textAlign: 'center'
+  },
+  styleInfo: {
+    flex: 1
+  },
+  styleName: {
+    fontWeight: '600',
+    fontSize: '0.95rem',
+    marginBottom: '2px'
+  },
+  styleDesc: {
+    fontSize: '0.8rem',
+    color: '#666'
+  },
+  styleCheck: {
+    color: '#8b5cf6',
+    fontWeight: 'bold',
+    fontSize: '1.1rem'
   }
 };
 
@@ -392,17 +435,32 @@ export function ToolSuiteBuilderScreen({ selectedTools, recommendations, industr
           </div>
 
           <div style={suiteStyles.formGroup}>
-            <label style={suiteStyles.label}>Style Preset</label>
-            <select
-              style={suiteStyles.select}
-              value={stylePreset}
-              onChange={(e) => setStylePreset(e.target.value)}
-            >
-              <option value="modern">Modern - Rounded, subtle shadows</option>
-              <option value="minimal">Minimal - Clean, light borders</option>
-              <option value="playful">Playful - Bold, rounded corners</option>
-              <option value="professional">Professional - Sharp, conservative</option>
-            </select>
+            <label style={suiteStyles.label}>Visual Style</label>
+            <div style={suiteStyles.styleGrid}>
+              {[
+                { id: 'modern', name: 'Modern', icon: '✨', desc: 'Clean lines, subtle shadows, rounded corners' },
+                { id: 'classic', name: 'Classic', icon: '📜', desc: 'Traditional, serif fonts, structured layout' },
+                { id: 'futuristic', name: 'Futuristic', icon: '🚀', desc: 'Gradients, glows, animated elements' },
+                { id: 'luxury', name: 'Luxury', icon: '👑', desc: 'Gold accents, elegant typography, premium feel' },
+                { id: 'minimal', name: 'Minimal', icon: '○', desc: 'Lots of whitespace, simple, focused' }
+              ].map(style => (
+                <div
+                  key={style.id}
+                  style={{
+                    ...suiteStyles.styleOption,
+                    ...(stylePreset === style.id ? suiteStyles.styleOptionSelected : {})
+                  }}
+                  onClick={() => setStylePreset(style.id)}
+                >
+                  <span style={suiteStyles.styleIcon}>{style.icon}</span>
+                  <div style={suiteStyles.styleInfo}>
+                    <div style={suiteStyles.styleName}>{style.name}</div>
+                    <div style={suiteStyles.styleDesc}>{style.desc}</div>
+                  </div>
+                  {stylePreset === style.id && <span style={suiteStyles.styleCheck}>✓</span>}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div style={suiteStyles.formGroup}>

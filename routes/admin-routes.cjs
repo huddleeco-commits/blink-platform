@@ -21,18 +21,23 @@ const handleValidationErrors = (req, res, next) => {
 // Database functions
 let db;
 try {
-  db = require('../database/db.js');
+  db = require('../database/db.cjs');
 } catch (e) {
   console.log('   DB: Database module not loaded yet');
 }
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_EXPIRES = '24h';
+const JWT_EXPIRES = '1h'; // Reduced from 24h for security - use refresh tokens for longer sessions
 
-// Validate JWT_SECRET is set
+// Validate JWT_SECRET is set and sufficiently strong
 if (!JWT_SECRET) {
   console.error('❌ CRITICAL: JWT_SECRET environment variable is required');
   console.error('   Admin routes will not function without it.');
+} else if (JWT_SECRET.length < 32) {
+  console.error('❌ CRITICAL: JWT_SECRET is too weak (min 32 characters required)');
+  console.error('   Generate a strong secret: openssl rand -base64 48');
+} else if (JWT_SECRET.includes('secret') || JWT_SECRET.includes('change') || JWT_SECRET.includes('local')) {
+  console.warn('⚠️ WARNING: JWT_SECRET appears to be a placeholder - use a cryptographically random value');
 }
 
 // ============================================
@@ -128,6 +133,12 @@ router.get('/dashboard', authenticateAdmin, async (req, res) => {
     const apiCost = parseFloat(stats.api_cost_this_month) || 0;
     const profitMargin = mrr > 0 ? ((mrr - apiCost) / mrr * 100).toFixed(1) : 0;
 
+    // Convert numeric fields in recentProjects
+    const processedProjects = recentProjects.map(p => ({
+      ...p,
+      api_cost: parseFloat(p.api_cost) || 0
+    }));
+
     res.json({
       success: true,
       stats: {
@@ -140,7 +151,7 @@ router.get('/dashboard', authenticateAdmin, async (req, res) => {
         tokensThisMonth: parseInt(stats.tokens_this_month) || 0,
         profitMargin: parseFloat(profitMargin)
       },
-      recentProjects
+      recentProjects: processedProjects
     });
   } catch (err) {
     console.error('Dashboard error:', err);

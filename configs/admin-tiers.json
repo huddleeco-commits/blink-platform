@@ -1,0 +1,228 @@
+{
+  "tiers": {
+    "lite": {
+      "name": "Lite",
+      "description": "Basic admin dashboard with essential content management",
+      "modules": [
+        "admin-dashboard",
+        "admin-content",
+        "admin-settings"
+      ],
+      "moduleCount": 3,
+      "features": [
+        "Overview dashboard",
+        "Page content editor",
+        "Basic settings"
+      ],
+      "recommended_for": [
+        "portfolio",
+        "personal-blog",
+        "landing-page",
+        "non-profit"
+      ]
+    },
+    "standard": {
+      "name": "Standard",
+      "description": "Full admin dashboard with customer management and analytics",
+      "modules": [
+        "admin-dashboard",
+        "admin-content",
+        "admin-settings",
+        "admin-analytics",
+        "admin-customers",
+        "admin-bookings",
+        "admin-notifications"
+      ],
+      "moduleCount": 7,
+      "features": [
+        "All Lite features",
+        "Traffic analytics",
+        "Customer management",
+        "Appointment bookings",
+        "Email notifications"
+      ],
+      "recommended_for": [
+        "salon",
+        "spa",
+        "fitness",
+        "restaurant",
+        "healthcare",
+        "professional-services",
+        "real-estate"
+      ],
+      "default": true
+    },
+    "pro": {
+      "name": "Pro",
+      "description": "Advanced admin with marketing, e-commerce, and SEO tools",
+      "modules": [
+        "admin-dashboard",
+        "admin-content",
+        "admin-settings",
+        "admin-analytics",
+        "admin-customers",
+        "admin-bookings",
+        "admin-notifications",
+        "admin-orders",
+        "admin-products",
+        "admin-marketing",
+        "admin-email",
+        "admin-seo",
+        "admin-team"
+      ],
+      "moduleCount": 13,
+      "features": [
+        "All Standard features",
+        "Order management",
+        "Product/inventory management",
+        "Marketing campaigns",
+        "Email campaign builder",
+        "SEO tools",
+        "Team management"
+      ],
+      "recommended_for": [
+        "ecommerce",
+        "retail",
+        "food-delivery",
+        "agency",
+        "saas"
+      ]
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "description": "Complete admin suite with multi-location and white-label capabilities",
+      "modules": [
+        "admin-dashboard",
+        "admin-content",
+        "admin-settings",
+        "admin-analytics",
+        "admin-customers",
+        "admin-bookings",
+        "admin-notifications",
+        "admin-orders",
+        "admin-products",
+        "admin-marketing",
+        "admin-email",
+        "admin-seo",
+        "admin-team",
+        "admin-locations",
+        "admin-api",
+        "admin-whitelabel"
+      ],
+      "moduleCount": 16,
+      "features": [
+        "All Pro features",
+        "Multi-location management",
+        "API keys & webhooks",
+        "White-label branding",
+        "Custom domain mapping"
+      ],
+      "recommended_for": [
+        "franchise",
+        "multi-location",
+        "enterprise",
+        "agency-whitelabel"
+      ]
+    }
+  },
+  "moduleInfo": {
+    "admin-dashboard": {
+      "name": "Dashboard",
+      "description": "Overview statistics and quick actions",
+      "icon": "LayoutDashboard",
+      "tier": "lite"
+    },
+    "admin-content": {
+      "name": "Content",
+      "description": "Page and media management",
+      "icon": "FileText",
+      "tier": "lite"
+    },
+    "admin-settings": {
+      "name": "Settings",
+      "description": "Business info and branding",
+      "icon": "Settings",
+      "tier": "lite"
+    },
+    "admin-analytics": {
+      "name": "Analytics",
+      "description": "Traffic and performance metrics",
+      "icon": "BarChart3",
+      "tier": "standard"
+    },
+    "admin-customers": {
+      "name": "Customers",
+      "description": "Customer management",
+      "icon": "Users",
+      "tier": "standard"
+    },
+    "admin-bookings": {
+      "name": "Bookings",
+      "description": "Appointment scheduling",
+      "icon": "Calendar",
+      "tier": "standard"
+    },
+    "admin-notifications": {
+      "name": "Notifications",
+      "description": "Email and SMS templates",
+      "icon": "Bell",
+      "tier": "standard"
+    },
+    "admin-orders": {
+      "name": "Orders",
+      "description": "Order management",
+      "icon": "ShoppingCart",
+      "tier": "pro"
+    },
+    "admin-products": {
+      "name": "Products",
+      "description": "Inventory and pricing",
+      "icon": "Package",
+      "tier": "pro"
+    },
+    "admin-marketing": {
+      "name": "Marketing",
+      "description": "Campaigns and promotions",
+      "icon": "Megaphone",
+      "tier": "pro"
+    },
+    "admin-email": {
+      "name": "Email Campaigns",
+      "description": "Email marketing",
+      "icon": "Mail",
+      "tier": "pro"
+    },
+    "admin-seo": {
+      "name": "SEO",
+      "description": "Search optimization",
+      "icon": "Search",
+      "tier": "pro"
+    },
+    "admin-team": {
+      "name": "Team",
+      "description": "User roles and permissions",
+      "icon": "UserCog",
+      "tier": "pro"
+    },
+    "admin-locations": {
+      "name": "Locations",
+      "description": "Multi-site management",
+      "icon": "MapPin",
+      "tier": "enterprise"
+    },
+    "admin-api": {
+      "name": "API",
+      "description": "API keys and webhooks",
+      "icon": "Key",
+      "tier": "enterprise"
+    },
+    "admin-whitelabel": {
+      "name": "White Label",
+      "description": "Custom branding",
+      "icon": "Palette",
+      "tier": "enterprise"
+    }
+  },
+  "tierOrder": ["lite", "standard", "pro", "enterprise"],
+  "defaultTier": "standard"
+}

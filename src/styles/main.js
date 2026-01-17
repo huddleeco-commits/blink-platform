@@ -189,6 +189,22 @@ export const styles = {
     fontSize: '11px',
     fontWeight: '700',
   },
+  pathCardFullControl: {
+    background: 'rgba(99, 102, 241, 0.08)',
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+  },
+  proBadge: {
+    position: 'absolute',
+    top: '-10px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+    color: '#fff',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: '700',
+  },
   pathIcon: {
     fontSize: '48px',
     marginBottom: '16px',

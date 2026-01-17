@@ -1,0 +1,33 @@
+{
+  "name": "admin-analytics",
+  "version": "1.0.0",
+  "description": "Traffic, conversions, performance metrics, and business analytics",
+  "tier": "standard",
+  "category": "analytics",
+  "icon": "BarChart3",
+  "order": 5,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["api_usage", "generations", "daily_stats"],
+  "features": [
+    "Traffic overview",
+    "Page views and unique visitors",
+    "Conversion tracking",
+    "Revenue analytics (MRR/ARR)",
+    "Cost analytics by operation and model",
+    "Performance metrics (response times, throughput)",
+    "Date range filtering",
+    "Export analytics data"
+  ],
+  "routes": {
+    "prefix": "/analytics",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/AnalyticsPage.jsx",
+    "sidebar": {
+      "id": "analytics",
+      "label": "Analytics",
+      "icon": "BarChart3"
+    }
+  }
+}

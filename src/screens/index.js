@@ -34,3 +34,9 @@ export { ToolCustomizationScreen } from './ToolCustomizationScreen.jsx';
 export { RecommendedToolsScreen } from './RecommendedToolsScreen.jsx';
 export { ToolSuiteBuilderScreen } from './ToolSuiteBuilderScreen.jsx';
 export { SuiteCompleteScreen } from './SuiteCompleteScreen.jsx';
+
+// Full Control Mode
+export { FullControlFlow } from './FullControlFlow.jsx';
+
+// Landing Page
+export { default as LandingPage } from './LandingPage.jsx';

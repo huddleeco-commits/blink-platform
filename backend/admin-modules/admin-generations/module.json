@@ -1,0 +1,34 @@
+{
+  "name": "admin-generations",
+  "version": "1.0.0",
+  "description": "Site generation tracking and analytics (internal platform module)",
+  "tier": "internal",
+  "category": "platform",
+  "icon": "Layers",
+  "order": 20,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["generations"],
+  "features": [
+    "Generation list with filtering",
+    "Status tracking",
+    "Industry breakdown",
+    "Cost per generation",
+    "Generation time metrics",
+    "Live site links",
+    "Download links",
+    "Error tracking"
+  ],
+  "routes": {
+    "prefix": "/generations",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/GenerationsPage.jsx",
+    "sidebar": {
+      "id": "generations",
+      "label": "Generations",
+      "icon": "Layers"
+    }
+  },
+  "platformOnly": true
+}

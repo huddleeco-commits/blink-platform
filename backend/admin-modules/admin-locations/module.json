@@ -1,0 +1,33 @@
+{
+  "name": "admin-locations",
+  "version": "1.0.0",
+  "description": "Multi-location/franchise management",
+  "tier": "enterprise",
+  "category": "operations",
+  "icon": "MapPin",
+  "order": 14,
+  "dependencies": ["admin-dashboard", "admin-settings"],
+  "requiredTables": ["locations"],
+  "features": [
+    "Multiple location management",
+    "Location-specific settings",
+    "Per-location hours",
+    "Per-location contact info",
+    "Location analytics",
+    "Franchise management",
+    "Territory mapping"
+  ],
+  "routes": {
+    "prefix": "/locations",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/LocationsPage.jsx",
+    "sidebar": {
+      "id": "locations",
+      "label": "Locations",
+      "icon": "MapPin"
+    }
+  },
+  "industries": ["restaurant", "retail", "franchise", "multi-location"]
+}

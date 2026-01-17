@@ -1,0 +1,200 @@
+{
+  "id": "pizza-ordering",
+  "name": "Pizza Ordering SaaS",
+  "description": "Complete pizza restaurant ordering system with online ordering, kitchen management, delivery tracking, and analytics",
+  "version": "1.0.0",
+  "industry": "restaurant",
+  "variant": "pizza",
+
+  "features": {
+    "core": [
+      "Online menu with categories, items, and customizations",
+      "Shopping cart with item customization",
+      "Order placement (delivery, pickup, dine-in)",
+      "Stripe payment processing",
+      "Order tracking with status updates",
+      "Customer accounts with order history",
+      "Promo codes and discounts"
+    ],
+    "kitchen": [
+      "Real-time order queue",
+      "Order status management",
+      "Preparation time estimates",
+      "Kitchen display system ready"
+    ],
+    "admin": [
+      "Dashboard with real-time stats",
+      "Sales analytics (daily, weekly, monthly)",
+      "Item performance reports",
+      "Customer analytics and segments",
+      "Menu management (CRUD)",
+      "Order management",
+      "Settings configuration"
+    ],
+    "delivery": [
+      "Delivery address management",
+      "Delivery fee calculation",
+      "Driver assignment",
+      "Delivery tracking"
+    ]
+  },
+
+  "database": {
+    "schema": "schema.sql",
+    "seed": "database/seed.js",
+    "tables": [
+      "customers",
+      "customer_addresses",
+      "menu_categories",
+      "menu_items",
+      "item_variants",
+      "toppings",
+      "orders",
+      "order_items",
+      "order_item_toppings",
+      "order_status_history",
+      "promo_codes",
+      "customer_promo_uses",
+      "reviews",
+      "staff",
+      "deliveries",
+      "store_settings",
+      "daily_sales"
+    ],
+    "triggers": [
+      "generate_order_number",
+      "update_updated_at",
+      "record_status_change",
+      "update_customer_stats"
+    ]
+  },
+
+  "api": {
+    "routes": {
+      "menu": {
+        "file": "routes/menu.js",
+        "endpoints": [
+          "GET /api/menu - Full menu with categories",
+          "GET /api/menu/item/:id - Item details with reviews",
+          "POST /api/menu/items - Create item (admin)",
+          "PUT /api/menu/items/:id - Update item (admin)",
+          "DELETE /api/menu/items/:id - Remove item (admin)",
+          "POST /api/menu/categories - Create category (admin)",
+          "PUT /api/menu/categories/:id - Update category (admin)",
+          "POST /api/menu/toppings - Create topping (admin)"
+        ]
+      },
+      "orders": {
+        "file": "routes/orders.js",
+        "endpoints": [
+          "POST /api/orders - Create order",
+          "POST /api/orders/:id/confirm-payment - Confirm Stripe payment",
+          "GET /api/orders/:id - Order details",
+          "GET /api/orders - Customer order history",
+          "GET /api/orders/kitchen/queue - Kitchen display",
+          "PUT /api/orders/:id/status - Update status (staff)",
+          "POST /api/orders/:id/cancel - Cancel order"
+        ]
+      },
+      "admin": {
+        "file": "routes/admin.js",
+        "endpoints": [
+          "GET /api/admin/dashboard - Main stats",
+          "GET /api/admin/analytics/sales - Sales data",
+          "GET /api/admin/analytics/items - Item performance",
+          "GET /api/admin/analytics/customers - Customer metrics",
+          "GET /api/admin/orders - All orders with filters",
+          "GET /api/admin/reports/daily - Daily report",
+          "GET /api/admin/settings - Store settings",
+          "PUT /api/admin/settings - Update settings (owner)"
+        ]
+      }
+    },
+    "middleware": [
+      "requireAuth - JWT verification",
+      "optionalAuth - Optional JWT (guest checkout)",
+      "requireStaff - Role-based access (owner/manager/cook/driver/cashier)",
+      "rateLimit - Request throttling"
+    ]
+  },
+
+  "integrations": {
+    "stripe": {
+      "features": [
+        "Payment intents for order payment",
+        "Automatic refunds on cancellation",
+        "Receipt emails"
+      ],
+      "required_env": [
+        "STRIPE_SECRET_KEY",
+        "STRIPE_WEBHOOK_SECRET"
+      ]
+    },
+    "email": {
+      "templates": [
+        "order_confirmation",
+        "order_ready",
+        "order_delivered",
+        "order_cancelled"
+      ],
+      "todo": "Email service integration pending"
+    }
+  },
+
+  "frontend_pages": {
+    "customer": [
+      "Home - Hero, featured items, specials",
+      "Menu - Full menu with search/filter",
+      "Item Detail - Customization modal",
+      "Cart - Order summary, promo codes",
+      "Checkout - Address, payment, confirmation",
+      "Order Tracking - Real-time status",
+      "Account - Profile, addresses, order history",
+      "Login/Register - Authentication"
+    ],
+    "admin": [
+      "Dashboard - Stats overview",
+      "Orders - List with filters, status management",
+      "Menu Management - CRUD for items/categories",
+      "Customers - List, segments, details",
+      "Analytics - Charts, reports",
+      "Settings - Store configuration"
+    ],
+    "kitchen": [
+      "Order Queue - Real-time incoming orders",
+      "Order Detail - Items, toppings, notes"
+    ]
+  },
+
+  "deployment": {
+    "frontend": "Vercel",
+    "backend": "Railway",
+    "database": "Railway PostgreSQL",
+    "required_env": [
+      "DATABASE_URL",
+      "JWT_SECRET",
+      "STRIPE_SECRET_KEY",
+      "STRIPE_WEBHOOK_SECRET",
+      "FRONTEND_URL"
+    ]
+  },
+
+  "generation_notes": {
+    "what_exists": [
+      "Complete database schema with triggers and indexes",
+      "Full API routes for menu, orders, admin",
+      "Authentication middleware with role-based access",
+      "Stripe payment integration",
+      "Seed data with realistic menu items"
+    ],
+    "what_needs_generation": [
+      "Frontend React components",
+      "Customer-facing pages (menu, cart, checkout)",
+      "Admin dashboard UI",
+      "Kitchen display UI",
+      "Real-time updates (WebSocket)",
+      "Email notifications"
+    ],
+    "frontier_status": "Backend complete, Frontend generation needed"
+  }
+}

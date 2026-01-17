@@ -1,0 +1,32 @@
+{
+  "name": "admin-settings",
+  "version": "1.0.0",
+  "description": "Basic site settings, branding, and contact information",
+  "tier": "lite",
+  "category": "core",
+  "icon": "Settings",
+  "order": 4,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["platform_config"],
+  "features": [
+    "Business name and tagline",
+    "Logo and favicon management",
+    "Brand colors",
+    "Contact information",
+    "Social media links",
+    "Business hours",
+    "Location/address settings"
+  ],
+  "routes": {
+    "prefix": "/settings",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/SettingsPage.jsx",
+    "sidebar": {
+      "id": "settings",
+      "label": "Settings",
+      "icon": "Settings"
+    }
+  }
+}

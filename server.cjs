@@ -54,6 +54,11 @@ const {
 } = require('./lib/configs/index.cjs');
 
 // ===========================================
+// TIER SELECTION (L1-L4 recommendations)
+// ===========================================
+const { selectTier } = require('./lib/orchestrators/index.cjs');
+
+// ===========================================
 // EXTRACTED ROUTES
 // ===========================================
 const {
@@ -346,6 +351,10 @@ const orchestratorRouter = createOrchestratorRoutes({
 });
 app.use('/api', orchestratorRouter);
 
+// Admin tiers routes (admin tier selection and suggestions)
+const adminTiersRouter = require('./lib/routes/admin-tiers.cjs');
+app.use('/api/admin/tiers', adminTiersRouter);
+
 // ============================================
 // API ENDPOINTS (remaining inline routes)
 // ============================================
@@ -355,7 +364,7 @@ app.use('/api', orchestratorRouter);
 // ============================================
 
 app.post('/api/assemble', async (req, res) => {
-  const { name, industry, references, theme, description, autoDeploy } = req.body;
+  const { name, industry, references, theme, description, autoDeploy, adminTier, adminModules } = req.body;
 
   if (!name) {
     return res.status(400).json({ success: false, error: 'Project name required' });
@@ -626,7 +635,86 @@ app.post('/api/assemble', async (req, res) => {
   } else {
     return res.status(400).json({ success: false, error: 'Must provide industry, bundles, or modules' });
   }
-  
+
+  // ============================================
+  // TIER RECOMMENDATION (L1-L4)
+  // Runs selectTier() and compares to what they're requesting
+  // ============================================
+  let tierRecommendation = null;
+  try {
+    // Build description text from available inputs
+    const descriptionText = description?.text || name || '';
+    const industryForTier = sanitizedIndustry || 'consulting';
+
+    // Get AI's recommendation based on business description
+    const tierResult = selectTier(descriptionText, industryForTier);
+
+    // Infer what tier they're "requesting" based on their explicit config
+    // L1 = single page, no admin, no backend
+    // L2 = multi-page, basic admin, no backend
+    // L3 = multi-page, admin with booking/auth
+    // L4 = full backend with cart/payments
+    let requestedTier = 'L2'; // Default assumption
+    const requestedPages = description?.pages || [];
+    const requestedModules = req.body.modules || [];
+    const requestedAdminTier = adminTier || 'standard';
+
+    // Detect what tier they're asking for based on config
+    const hasCartFeatures = requestedPages.some(p => ['checkout', 'cart', 'tracking'].includes(p)) ||
+                           requestedModules.some(m => m.includes('checkout') || m.includes('payment'));
+    const hasBookingFeatures = requestedPages.some(p => ['booking', 'appointments'].includes(p)) ||
+                              requestedModules.some(m => m.includes('booking'));
+    const hasAuthFeatures = requestedPages.some(p => ['login', 'register', 'account'].includes(p)) ||
+                           requestedModules.some(m => m.includes('auth'));
+
+    if (hasCartFeatures) {
+      requestedTier = 'L4';
+    } else if (hasBookingFeatures || hasAuthFeatures || requestedAdminTier === 'pro') {
+      requestedTier = 'L3';
+    } else if (requestedPages.length > 1 || requestedAdminTier !== 'none') {
+      requestedTier = 'L2';
+    } else if (requestedPages.length <= 1) {
+      requestedTier = 'L1';
+    }
+
+    // Build recommendation object
+    tierRecommendation = {
+      recommendedTier: tierResult.recommended,
+      recommendedTierName: tierResult.tier?.name || 'Presence',
+      requestedTier: requestedTier,
+      detectedFeatures: tierResult.detectedFeatures || [],
+      match: tierResult.recommended === requestedTier,
+      tierMismatchWarning: null,
+      upgradeOptions: tierResult.upgradeOptions || [],
+      downgradeOptions: tierResult.downgradeOptions || []
+    };
+
+    // Generate mismatch warning if recommendation differs
+    if (tierResult.recommended !== requestedTier) {
+      const tierOrder = { 'L1': 1, 'L2': 2, 'L3': 3, 'L4': 4 };
+      const recommendedLevel = tierOrder[tierResult.recommended];
+      const requestedLevel = tierOrder[requestedTier];
+
+      if (recommendedLevel > requestedLevel) {
+        // They're under-building - suggest upgrade
+        const missingFeatures = tierResult.detectedFeatures?.slice(0, 3).join(', ') || 'additional features';
+        tierRecommendation.tierMismatchWarning = `Your business may benefit from ${tierResult.tier?.name || 'a higher tier'} features like ${missingFeatures}`;
+        tierRecommendation.direction = 'upgrade';
+      } else {
+        // They're over-building - could save money
+        tierRecommendation.tierMismatchWarning = `Your business might not need all ${requestedTier} features. Consider ${tierResult.tier?.name || 'a simpler tier'} to reduce complexity.`;
+        tierRecommendation.direction = 'downgrade';
+      }
+
+      console.log(`   📊 Tier mismatch: Recommended ${tierResult.recommended}, Requested ${requestedTier}`);
+    } else {
+      console.log(`   ✅ Tier match: ${tierResult.recommended} (${tierResult.tier?.name})`);
+    }
+  } catch (tierErr) {
+    console.warn('   ⚠️ Tier recommendation failed:', tierErr.message);
+    // Continue without tier recommendation - don't block assembly
+  }
+
   const startTime = Date.now();
   const ASSEMBLY_TIMEOUT = 5 * 60 * 1000; // 5 minute timeout
   let responded = false;
@@ -787,21 +875,95 @@ app.post('/api/assemble', async (req, res) => {
       fs.writeFileSync(path.join(backendRoutesDir, 'health.js'), generateHealthRoutes());
       console.log('   🔌 Admin routes generated (brain.js, health.js)');
 
-      // Copy business-admin module
-      const businessAdminSrc = path.join(MODULE_LIBRARY, 'frontend', 'business-admin');
+      // Copy admin modules based on tier
+      const resolvedAdminTier = adminTier || 'standard';
+      let resolvedAdminModules = adminModules || [];
       const businessAdminDest = path.join(projectPath, 'admin');
-      if (fs.existsSync(businessAdminSrc)) {
-        copyDirectorySync(businessAdminSrc, businessAdminDest);
-        
+
+      // If no modules specified, get default modules for tier
+      if (!resolvedAdminModules || resolvedAdminModules.length === 0) {
+        try {
+          const { suggestAdminTier, getModulesForTier } = require('./lib/services/admin-module-loader.cjs');
+
+          // Try to suggest based on industry, or use the specified tier
+          if (resolvedIndustryKey) {
+            const suggestion = suggestAdminTier(resolvedIndustryKey, description?.text || '');
+            resolvedAdminModules = suggestion.modules;
+            console.log(`   🎛️ Auto-detected admin tier: ${suggestion.tier} (${suggestion.reason})`);
+          } else {
+            resolvedAdminModules = getModulesForTier(resolvedAdminTier);
+          }
+        } catch (e) {
+          console.warn('   ⚠️ Failed to get admin modules, using default tier:', e.message);
+          resolvedAdminModules = ['admin-dashboard', 'admin-content', 'admin-settings', 'admin-analytics', 'admin-customers', 'admin-bookings', 'admin-notifications'];
+        }
+      }
+
+      try {
+        const { loadModulesForAssembly, generateAdminAppJsx } = require('./lib/services/admin-module-loader.cjs');
+
+        // Load selected admin modules
+        const moduleData = loadModulesForAssembly(resolvedAdminModules);
+
+        // Create admin directory
+        if (!fs.existsSync(businessAdminDest)) {
+          fs.mkdirSync(businessAdminDest, { recursive: true });
+        }
+
+        // Copy each module
+        for (const mod of moduleData.modules) {
+          const modDest = path.join(businessAdminDest, 'modules', mod.name);
+          if (fs.existsSync(mod.path)) {
+            copyDirectorySync(mod.path, modDest);
+          }
+        }
+
+        // Copy shared module
+        if (moduleData.shared && fs.existsSync(moduleData.shared)) {
+          copyDirectorySync(moduleData.shared, path.join(businessAdminDest, 'modules', '_shared'));
+        }
+
+        // Generate admin App.jsx
+        const adminAppJsx = generateAdminAppJsx(resolvedAdminModules, {
+          businessName: name
+        });
+        fs.writeFileSync(path.join(businessAdminDest, 'src', 'App.jsx'), adminAppJsx);
+
+        // Save admin config
+        fs.writeFileSync(path.join(businessAdminDest, 'admin-config.json'), JSON.stringify({
+          tier: resolvedAdminTier,
+          modules: resolvedAdminModules,
+          generatedAt: new Date().toISOString(),
+          sidebar: moduleData.sidebar,
+          routes: moduleData.routes
+        }, null, 2));
+
         // Copy brain.json to admin config folder
         const adminConfigDir = path.join(businessAdminDest, 'src', 'config');
         if (!fs.existsSync(adminConfigDir)) {
           fs.mkdirSync(adminConfigDir, { recursive: true });
         }
         fs.copyFileSync(path.join(projectPath, 'brain.json'), path.join(adminConfigDir, 'brain.json'));
-        console.log('   🎛️ business-admin module copied');
-      } else {
-        console.log('   ⚠️ business-admin module not found at:', businessAdminSrc);
+
+        console.log(`   🎛️ Admin modules copied (${resolvedAdminTier} tier, ${resolvedAdminModules.length} modules)`);
+      } catch (adminErr) {
+        console.warn('   ⚠️ Modular admin setup failed, using fallback business-admin:', adminErr.message);
+
+        // Fallback to old business-admin module
+        const businessAdminSrc = path.join(MODULE_LIBRARY, 'frontend', 'business-admin');
+        if (fs.existsSync(businessAdminSrc)) {
+          copyDirectorySync(businessAdminSrc, businessAdminDest);
+
+          // Copy brain.json to admin config folder
+          const adminConfigDir = path.join(businessAdminDest, 'src', 'config');
+          if (!fs.existsSync(adminConfigDir)) {
+            fs.mkdirSync(adminConfigDir, { recursive: true });
+          }
+          fs.copyFileSync(path.join(projectPath, 'brain.json'), path.join(adminConfigDir, 'brain.json'));
+          console.log('   🎛️ Fallback business-admin module copied');
+        } else {
+          console.log('   ⚠️ business-admin module not found at:', businessAdminSrc);
+        }
       }
 
       // Copy auth-pages module for industries that require authentication
@@ -1119,6 +1281,8 @@ console.log(`   ⏱️ Total generation time: ${((Date.now() - startTime) / 1000
         },
         output: output,
         deployment: deployResult,
+        // Tier recommendation (L1-L4) - for frontend upsell/suggestion UI
+        tierRecommendation: tierRecommendation,
         duration: Date.now() - startTime
       });
     } else {
@@ -1152,6 +1316,192 @@ async function autoDeployProject(projectPath, projectName, adminEmail) {
     return { success: false, error: error.message };
   }
 }
+
+// ============================================
+// AI PAGE CHAT ENDPOINT (Full Control Mode)
+// ============================================
+const Anthropic = require('@anthropic-ai/sdk');
+
+app.post('/api/ai/page-chat', async (req, res) => {
+  const { message, pageType, pageName, businessContext, currentSettings, conversationHistory } = req.body;
+
+  if (!message) {
+    return res.status(400).json({ success: false, error: 'Message is required' });
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ success: false, error: 'AI service not configured' });
+  }
+
+  try {
+    const client = new Anthropic({ apiKey });
+
+    // Build context for the AI
+    const businessInfo = businessContext || {};
+    const systemPrompt = `You are a helpful web design assistant helping a user customize their ${pageName || pageType} page for "${businessInfo.businessName || 'their business'}".
+
+Business Context:
+- Business Name: ${businessInfo.businessName || 'Not specified'}
+- Industry: ${businessInfo.industryDisplay || businessInfo.industry || 'Not specified'}
+- Location: ${businessInfo.location || 'Not specified'}
+- Tagline: ${businessInfo.tagline || 'Not specified'}
+
+Current Page Settings:
+- Layout: ${currentSettings?.layout || 'Not selected'}
+- Style: ${currentSettings?.style || 'modern'}
+- Sections: ${currentSettings?.sections?.join(', ') || 'Default sections'}
+- Primary Color: ${currentSettings?.colors?.primary || '#3b82f6'}
+- Accent Color: ${currentSettings?.colors?.accent || '#10b981'}
+
+Your role:
+1. Answer questions about page design, layouts, and best practices
+2. Suggest improvements based on the business type and industry
+3. When the user describes how they want the page to look, extract concrete suggestions
+4. Be concise but helpful
+
+When you have specific actionable suggestions for the page, include them in a JSON block at the end of your response like this:
+\`\`\`suggestions
+{
+  "layout": "layout-id-if-suggesting",
+  "style": "style-id-if-suggesting",
+  "sections": ["section1", "section2"],
+  "colors": { "primary": "#hex", "accent": "#hex" }
+}
+\`\`\`
+
+Only include the suggestions block when you have concrete recommendations. Omit fields you're not suggesting changes for.`;
+
+    // Build messages array with conversation history
+    const messages = [];
+    if (conversationHistory && conversationHistory.length > 0) {
+      for (const msg of conversationHistory) {
+        messages.push({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.content
+        });
+      }
+    }
+    messages.push({ role: 'user', content: message });
+
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: messages
+    });
+
+    const responseText = response.content[0].text;
+
+    // Extract suggestions if present
+    let suggestions = null;
+    const suggestionsMatch = responseText.match(/```suggestions\n([\s\S]*?)\n```/);
+    if (suggestionsMatch) {
+      try {
+        suggestions = JSON.parse(suggestionsMatch[1]);
+      } catch (e) {
+        console.warn('Failed to parse suggestions JSON:', e.message);
+      }
+    }
+
+    // Remove suggestions block from response text for display
+    const cleanResponse = responseText.replace(/```suggestions\n[\s\S]*?\n```/g, '').trim();
+
+    res.json({
+      success: true,
+      response: cleanResponse,
+      suggestions: suggestions
+    });
+
+  } catch (error) {
+    console.error('AI page chat error:', error.message);
+    captureException(error, { tags: { component: 'ai-page-chat' } });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get AI response'
+    });
+  }
+});
+
+// AI Suggest Pages Endpoint (for auto-fill)
+app.post('/api/ai/suggest-pages', async (req, res) => {
+  const { businessName, industry, location, tagline, pages, existingSettings } = req.body;
+
+  if (!pages || pages.length === 0) {
+    return res.status(400).json({ success: false, error: 'Pages list is required' });
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ success: false, error: 'AI service not configured' });
+  }
+
+  try {
+    const client = new Anthropic({ apiKey });
+
+    // Find pages that don't have settings yet
+    const pagesToSuggest = pages.filter(p => !existingSettings || !existingSettings[p]);
+
+    if (pagesToSuggest.length === 0) {
+      return res.json({ success: true, suggestions: {} });
+    }
+
+    const systemPrompt = `You are a web design expert. Generate page settings for a ${industry || 'business'} website.
+
+Business: ${businessName || 'Unknown'}
+Industry: ${industry || 'general'}
+Location: ${location || 'Not specified'}
+Tagline: ${tagline || 'Not specified'}
+
+Generate settings for these pages: ${pagesToSuggest.join(', ')}
+
+For each page, suggest:
+- layout: A layout ID (hero-stack, split-screen, card-grid, minimal, etc.)
+- style: A style ID (modern, minimal, warm, bold, luxury, playful, corporate, natural)
+- sections: Array of section IDs appropriate for that page type
+- colors: { primary: "#hex", accent: "#hex" }
+
+Return ONLY valid JSON with page names as keys:
+{
+  "home": { "layout": "hero-stack", "style": "modern", "sections": ["hero", "features", "testimonials", "cta"], "colors": { "primary": "#3b82f6", "accent": "#10b981" } },
+  "about": { ... }
+}`;
+
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2048,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: `Generate page settings for: ${pagesToSuggest.join(', ')}` }]
+    });
+
+    const responseText = response.content[0].text;
+
+    // Try to parse the JSON response
+    let suggestions = {};
+    try {
+      // Find JSON in the response
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        suggestions = JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.warn('Failed to parse AI suggestions:', e.message);
+    }
+
+    res.json({
+      success: true,
+      suggestions: suggestions
+    });
+
+  } catch (error) {
+    console.error('AI suggest pages error:', error.message);
+    captureException(error, { tags: { component: 'ai-suggest-pages' } });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get AI suggestions'
+    });
+  }
+});
 
 // ============================================
 // SENTRY TEST ENDPOINT (for verification)

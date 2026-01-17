@@ -1,0 +1,32 @@
+{
+  "name": "admin-industries",
+  "version": "1.0.0",
+  "description": "Industry analytics and breakdown (internal platform module)",
+  "tier": "internal",
+  "category": "platform",
+  "icon": "Building2",
+  "order": 21,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["industry_stats", "generations"],
+  "features": [
+    "Generations per industry",
+    "Industry success rates",
+    "Average pages per industry",
+    "Industry costs",
+    "Popular modules per industry",
+    "Growth trends"
+  ],
+  "routes": {
+    "prefix": "/industries",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/IndustriesPage.jsx",
+    "sidebar": {
+      "id": "industries",
+      "label": "Industries",
+      "icon": "Building2"
+    }
+  },
+  "platformOnly": true
+}

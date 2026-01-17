@@ -1,0 +1,32 @@
+{
+  "name": "admin-notifications",
+  "version": "1.0.0",
+  "description": "Email and SMS notification templates and sending",
+  "tier": "standard",
+  "category": "communications",
+  "icon": "Bell",
+  "order": 7,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["notification_templates", "notification_logs"],
+  "features": [
+    "Email template editor",
+    "SMS template editor",
+    "Template variables",
+    "Preview notifications",
+    "Send test notifications",
+    "Notification history",
+    "Delivery status tracking"
+  ],
+  "routes": {
+    "prefix": "/notifications",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/NotificationsPage.jsx",
+    "sidebar": {
+      "id": "notifications",
+      "label": "Notifications",
+      "icon": "Bell"
+    }
+  }
+}

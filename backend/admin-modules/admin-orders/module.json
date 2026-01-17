@@ -1,0 +1,34 @@
+{
+  "name": "admin-orders",
+  "version": "1.0.0",
+  "description": "Order management, status tracking, and fulfillment",
+  "tier": "pro",
+  "category": "commerce",
+  "icon": "ShoppingCart",
+  "order": 8,
+  "dependencies": ["admin-dashboard", "admin-customers"],
+  "requiredTables": ["orders", "order_items"],
+  "features": [
+    "Order list with filtering",
+    "Order status management",
+    "Order details view",
+    "Fulfillment tracking",
+    "Payment status",
+    "Refund processing",
+    "Order history",
+    "Export orders"
+  ],
+  "routes": {
+    "prefix": "/orders",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/OrdersPage.jsx",
+    "sidebar": {
+      "id": "orders",
+      "label": "Orders",
+      "icon": "ShoppingCart"
+    }
+  },
+  "industries": ["restaurant", "ecommerce", "retail", "food-delivery"]
+}

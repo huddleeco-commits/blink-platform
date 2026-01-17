@@ -485,6 +485,15 @@ export function OrchestratorStep({ onComplete, onBack, isToolMode = false, prese
                     <div style={orchestratorStyles.decisionLabel}>Modules</div>
                     <div style={orchestratorStyles.decisionValue}>{aiDecisions.modules?.length || 0} modules</div>
                   </div>
+                  {aiDecisions.adminTier && (
+                    <div style={orchestratorStyles.decisionItem}>
+                      <div style={orchestratorStyles.decisionLabel}>Admin Dashboard</div>
+                      <div style={orchestratorStyles.decisionValue}>
+                        {aiDecisions.adminTier.charAt(0).toUpperCase() + aiDecisions.adminTier.slice(1)}
+                        {aiDecisions.adminModuleCount ? ` (${aiDecisions.adminModuleCount} modules)` : ''}
+                      </div>
+                    </div>
+                  )}
                   {aiDecisions.colors && (
                     <div style={orchestratorStyles.decisionItem}>
                       <div style={orchestratorStyles.decisionLabel}>Colors</div>

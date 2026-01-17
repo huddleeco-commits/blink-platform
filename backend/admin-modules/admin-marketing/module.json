@@ -1,0 +1,32 @@
+{
+  "name": "admin-marketing",
+  "version": "1.0.0",
+  "description": "Marketing campaigns, promotions, and referral management",
+  "tier": "pro",
+  "category": "marketing",
+  "icon": "Megaphone",
+  "order": 10,
+  "dependencies": ["admin-dashboard", "admin-customers"],
+  "requiredTables": ["referral_codes", "promotions"],
+  "features": [
+    "Create promotions/discounts",
+    "Referral code management",
+    "Discount percentage/amount",
+    "Usage tracking",
+    "Revenue per referral",
+    "Max uses and expiration",
+    "Campaign performance"
+  ],
+  "routes": {
+    "prefix": "/marketing",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/MarketingPage.jsx",
+    "sidebar": {
+      "id": "marketing",
+      "label": "Marketing",
+      "icon": "Megaphone"
+    }
+  }
+}

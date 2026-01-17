@@ -1,0 +1,33 @@
+{
+  "name": "admin-alerts",
+  "version": "1.0.0",
+  "description": "System alerts and monitoring rules (internal platform module)",
+  "tier": "internal",
+  "category": "platform",
+  "icon": "Bell",
+  "order": 23,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["system_alerts", "alert_rules"],
+  "features": [
+    "Active alerts display",
+    "Alert severity levels",
+    "Resolve alerts",
+    "Alert rules management",
+    "Threshold configuration",
+    "Notification channels",
+    "Alert history"
+  ],
+  "routes": {
+    "prefix": "/alerts",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/AlertsPage.jsx",
+    "sidebar": {
+      "id": "alerts",
+      "label": "Alerts",
+      "icon": "Bell"
+    }
+  },
+  "platformOnly": true
+}

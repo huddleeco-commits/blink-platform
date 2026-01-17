@@ -1,0 +1,33 @@
+{
+  "name": "admin-email",
+  "version": "1.0.0",
+  "description": "Email campaign builder and management",
+  "tier": "pro",
+  "category": "marketing",
+  "icon": "Mail",
+  "order": 11,
+  "dependencies": ["admin-dashboard", "admin-customers"],
+  "requiredTables": ["email_campaigns", "email_sends"],
+  "features": [
+    "Email campaign creation",
+    "Template editor",
+    "Audience segmentation",
+    "Schedule campaigns",
+    "Open/click tracking",
+    "Unsubscribe management",
+    "Campaign analytics",
+    "A/B testing"
+  ],
+  "routes": {
+    "prefix": "/email",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/EmailPage.jsx",
+    "sidebar": {
+      "id": "email",
+      "label": "Email Campaigns",
+      "icon": "Mail"
+    }
+  }
+}

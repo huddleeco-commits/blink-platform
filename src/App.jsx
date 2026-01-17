@@ -62,13 +62,19 @@ import {
   ToolCustomizationScreen,
   RecommendedToolsScreen,
   ToolSuiteBuilderScreen,
-  SuiteCompleteScreen
+  SuiteCompleteScreen,
+  FullControlFlow,
+  LandingPage
 } from './screens';
+import { ModeSelector } from './components';
 
 // ============================================
 // MAIN APP
 // ============================================
 export default function App() {
+  // Landing page state (show marketing page first)
+  const [showLanding, setShowLanding] = useState(true);
+
   // Auth state
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isDevUnlocked, setIsDevUnlocked] = useState(false);
@@ -77,7 +83,7 @@ export default function App() {
   const [taglineIndex, setTaglineIndex] = useState(0);
   
   // Flow state
-  const [step, setStep] = useState('choose-path'); // choose-path, rebuild, quick, reference, orchestrator, upload-assets, customize, generating, complete, deploying, deploy-complete, deploy-error, error
+  const [step, setStep] = useState('choose-path'); // choose-path, rebuild, quick, reference, orchestrator, full-control, upload-assets, customize, generating, complete, deploying, deploy-complete, deploy-error, error
   
   // Deploy state
   const [deployStatus, setDeployStatus] = useState(null);
@@ -190,7 +196,11 @@ export default function App() {
     imageDescription: '',
 
     // Extra details for AI customization
-    extraDetails: ''
+    extraDetails: '',
+
+    // Admin tier configuration
+    adminTier: null, // null = auto-detect, or 'lite', 'standard', 'pro', 'enterprise'
+    adminModules: [] // Selected admin modules
   });
 
   // NEW: Generation state with real steps
@@ -305,6 +315,9 @@ export default function App() {
     } else if (selectedPath === 'reference') {
       setIsToolMode(false);
       setStep('reference');
+    } else if (selectedPath === 'full-control') {
+      setIsToolMode(false);
+      setStep('full-control');
     }
   };
   
@@ -397,6 +410,9 @@ export default function App() {
           colors: projectData.colors,
           preset: projectData.selectedPreset
         },
+        // Admin tier configuration
+        adminTier: projectData.adminTier || 'standard',
+        adminModules: projectData.adminModules || [],
         description: {
           text: projectData.tagline || `${projectData.businessName} - ${projectData.industry?.name || 'Professional Business'}`,
           pages: projectData.selectedPages,
@@ -682,6 +698,13 @@ export default function App() {
   // ============================================
   // RENDER
   // ============================================
+
+  // Show landing page first (marketing page)
+  if (showLanding) {
+    return <LandingPage onGetStarted={() => setShowLanding(false)} />;
+  }
+
+  // Then show password gate
   if (!isUnlocked) {
     return <PasswordGate onUnlock={() => setIsUnlocked(true)} />;
   }
@@ -829,6 +852,33 @@ export default function App() {
                 setRecommendationsLoading(false);
               }
             }}
+          />
+        )}
+
+        {step === 'full-control' && (
+          <FullControlFlow
+            sharedContext={sharedContext}
+            onUpdateContext={setSharedContext}
+            onGenerate={async (config) => {
+              // Update projectData for generation
+              updateProject({
+                businessName: config.businessName,
+                tagline: config.tagline,
+                location: config.location,
+                industry: { name: config.industryDisplay, key: config.industry },
+                industryKey: config.industry,
+                selectedPages: config.selectedPages,
+                adminTier: config.adminTier,
+                adminModules: config.adminModules,
+                // Store page-specific settings for generation
+                fullControlSettings: config.pageSettings
+              });
+              // Build input for orchestrator or direct generation
+              const inputDescription = `Build a ${config.industryDisplay} website for ${config.businessName}${config.location ? ` in ${config.location}` : ''}. ${config.tagline ? `Tagline: "${config.tagline}". ` : ''}Pages: ${config.selectedPages.join(', ')}. Mode: Full Control with custom page layouts.`;
+              setPendingOrchestratorInput(inputDescription);
+              setStep('orchestrator');
+            }}
+            onBack={() => setStep('choose-path')}
           />
         )}
 

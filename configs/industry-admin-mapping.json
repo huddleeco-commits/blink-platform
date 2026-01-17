@@ -1,0 +1,297 @@
+{
+  "industries": {
+    "restaurant": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings", "admin-orders"],
+      "reason": "Restaurants need reservation and order management"
+    },
+    "cafe": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-orders"],
+      "reason": "Cafes benefit from order tracking"
+    },
+    "bakery": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-orders", "admin-products"],
+      "reason": "Bakeries need product and order management"
+    },
+    "food-delivery": {
+      "defaultTier": "pro",
+      "suggestedModules": ["admin-orders", "admin-products"],
+      "reason": "Food delivery requires full order and inventory management"
+    },
+    "salon": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Salons rely heavily on appointment scheduling"
+    },
+    "spa": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Spas need appointment and service management"
+    },
+    "fitness": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Fitness centers need class and session booking"
+    },
+    "yoga": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Yoga studios need class scheduling"
+    },
+    "healthcare": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings", "admin-customers"],
+      "reason": "Healthcare needs patient scheduling and records"
+    },
+    "dental": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings", "admin-customers"],
+      "reason": "Dental practices need appointment scheduling"
+    },
+    "veterinary": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings", "admin-customers"],
+      "reason": "Vet clinics need pet and appointment management"
+    },
+    "ecommerce": {
+      "defaultTier": "pro",
+      "suggestedModules": ["admin-orders", "admin-products", "admin-marketing"],
+      "reason": "E-commerce requires full commerce functionality"
+    },
+    "retail": {
+      "defaultTier": "pro",
+      "suggestedModules": ["admin-orders", "admin-products"],
+      "reason": "Retail needs inventory and order management"
+    },
+    "real-estate": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Real estate needs showing/viewing scheduling"
+    },
+    "photography": {
+      "defaultTier": "lite",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Photographers mainly need portfolio and optional booking"
+    },
+    "portfolio": {
+      "defaultTier": "lite",
+      "suggestedModules": [],
+      "reason": "Portfolios only need basic content management"
+    },
+    "personal-blog": {
+      "defaultTier": "lite",
+      "suggestedModules": [],
+      "reason": "Blogs need simple content management"
+    },
+    "agency": {
+      "defaultTier": "pro",
+      "suggestedModules": ["admin-team", "admin-marketing"],
+      "reason": "Agencies need team and client management"
+    },
+    "law-firm": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Law firms need consultation scheduling"
+    },
+    "accounting": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings", "admin-customers"],
+      "reason": "Accounting firms need client and appointment management"
+    },
+    "consulting": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Consultants need meeting scheduling"
+    },
+    "professional-services": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Professional services need appointment booking"
+    },
+    "non-profit": {
+      "defaultTier": "lite",
+      "suggestedModules": [],
+      "reason": "Non-profits need basic content and donation info"
+    },
+    "church": {
+      "defaultTier": "lite",
+      "suggestedModules": [],
+      "reason": "Churches need event and content management"
+    },
+    "school": {
+      "defaultTier": "standard",
+      "suggestedModules": [],
+      "reason": "Schools need content and basic admin"
+    },
+    "construction": {
+      "defaultTier": "lite",
+      "suggestedModules": [],
+      "reason": "Construction companies need portfolio and contact"
+    },
+    "plumbing": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Service businesses need appointment scheduling"
+    },
+    "electrician": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Service businesses need appointment scheduling"
+    },
+    "hvac": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "HVAC services need scheduling"
+    },
+    "cleaning": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Cleaning services need booking management"
+    },
+    "landscaping": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Landscaping services need scheduling"
+    },
+    "auto-repair": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Auto shops need appointment scheduling"
+    },
+    "franchise": {
+      "defaultTier": "enterprise",
+      "suggestedModules": ["admin-locations"],
+      "reason": "Franchises need multi-location management"
+    },
+    "multi-location": {
+      "defaultTier": "enterprise",
+      "suggestedModules": ["admin-locations"],
+      "reason": "Multiple locations need centralized management"
+    },
+    "hotel": {
+      "defaultTier": "pro",
+      "suggestedModules": ["admin-bookings", "admin-orders"],
+      "reason": "Hotels need room booking and service orders"
+    },
+    "event-venue": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Venues need event booking management"
+    },
+    "wedding": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Wedding services need booking management"
+    },
+    "pet-grooming": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Pet services need appointment scheduling"
+    },
+    "daycare": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings", "admin-customers"],
+      "reason": "Daycares need enrollment and scheduling"
+    },
+    "tutoring": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Tutoring services need session scheduling"
+    },
+    "music-school": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Music schools need lesson scheduling"
+    },
+    "art-studio": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-bookings"],
+      "reason": "Art studios need class scheduling"
+    },
+    "saas": {
+      "defaultTier": "pro",
+      "suggestedModules": ["admin-analytics", "admin-customers"],
+      "reason": "SaaS needs user analytics and management"
+    },
+    "tech-startup": {
+      "defaultTier": "standard",
+      "suggestedModules": ["admin-analytics"],
+      "reason": "Startups need analytics and content"
+    }
+  },
+  "keywords": {
+    "booking": ["admin-bookings"],
+    "bookings": ["admin-bookings"],
+    "appointment": ["admin-bookings"],
+    "appointments": ["admin-bookings"],
+    "reservation": ["admin-bookings"],
+    "reservations": ["admin-bookings"],
+    "schedule": ["admin-bookings"],
+    "scheduling": ["admin-bookings"],
+    "class booking": ["admin-bookings"],
+    "book online": ["admin-bookings"],
+    "order": ["admin-orders"],
+    "orders": ["admin-orders"],
+    "delivery": ["admin-orders"],
+    "checkout": ["admin-orders"],
+    "cart": ["admin-orders"],
+    "takeout": ["admin-orders"],
+    "take-out": ["admin-orders"],
+    "pickup": ["admin-orders"],
+    "product": ["admin-products"],
+    "products": ["admin-products"],
+    "inventory": ["admin-products"],
+    "stock": ["admin-products"],
+    "catalog": ["admin-products"],
+    "menu items": ["admin-products"],
+    "shop": ["admin-orders", "admin-products"],
+    "store": ["admin-orders", "admin-products"],
+    "e-commerce": ["admin-orders", "admin-products", "admin-marketing"],
+    "ecommerce": ["admin-orders", "admin-products", "admin-marketing"],
+    "online store": ["admin-orders", "admin-products", "admin-marketing"],
+    "marketing": ["admin-marketing"],
+    "promotions": ["admin-marketing"],
+    "discounts": ["admin-marketing"],
+    "campaign": ["admin-marketing", "admin-email"],
+    "campaigns": ["admin-marketing", "admin-email"],
+    "email campaigns": ["admin-marketing", "admin-email"],
+    "email": ["admin-email"],
+    "newsletter": ["admin-email"],
+    "mailing list": ["admin-email"],
+    "team": ["admin-team"],
+    "teams": ["admin-team"],
+    "staff": ["admin-team"],
+    "employee": ["admin-team"],
+    "employees": ["admin-team"],
+    "workers": ["admin-team"],
+    "location": ["admin-locations"],
+    "locations": ["admin-locations"],
+    "branch": ["admin-locations"],
+    "branches": ["admin-locations"],
+    "franchise": ["admin-locations"],
+    "franchises": ["admin-locations"],
+    "multiple locations": ["admin-locations"],
+    "multi-location": ["admin-locations"],
+    "chain": ["admin-locations"],
+    "api": ["admin-api"],
+    "integration": ["admin-api"],
+    "integrations": ["admin-api"],
+    "webhook": ["admin-api"],
+    "webhooks": ["admin-api"],
+    "whitelabel": ["admin-whitelabel"],
+    "white-label": ["admin-whitelabel"],
+    "white label": ["admin-whitelabel"],
+    "reseller": ["admin-whitelabel"],
+    "rebrand": ["admin-whitelabel"]
+  },
+  "tierBumpKeywords": {
+    "enterprise": ["franchise", "franchises", "multiple locations", "multi-location", "locations", "branches", "chain"],
+    "pro": ["e-commerce", "ecommerce", "online store", "shop", "store", "retail", "marketing campaigns"]
+  },
+  "defaultMapping": {
+    "unknownIndustry": "standard",
+    "fallbackTier": "standard"
+  }
+}

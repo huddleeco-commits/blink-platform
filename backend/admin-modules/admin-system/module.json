@@ -1,0 +1,33 @@
+{
+  "name": "admin-system",
+  "version": "1.0.0",
+  "description": "System health monitoring (internal platform module)",
+  "tier": "internal",
+  "category": "platform",
+  "icon": "Server",
+  "order": 24,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["system_health", "platform_config", "data_quality_log"],
+  "features": [
+    "CPU/memory/disk usage",
+    "Database pool status",
+    "Uptime monitoring",
+    "Service status checks",
+    "Platform configuration",
+    "Data quality checks",
+    "Recent errors and activity"
+  ],
+  "routes": {
+    "prefix": "/system",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/SystemPage.jsx",
+    "sidebar": {
+      "id": "system",
+      "label": "System",
+      "icon": "Server"
+    }
+  },
+  "platformOnly": true
+}

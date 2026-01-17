@@ -31,18 +31,18 @@ const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID;
 const RAILWAY_TEAM_ID = process.env.RAILWAY_TEAM_ID;
 
 // Configuration
-const GITHUB_REPO = 'huddleeco-commits/module-library';
+const GITHUB_REPO = 'huddleeco-commits/blink-platform';
 const GITHUB_BRANCH = 'main';
-const ROOT_DIRECTORY = 'module-assembler-ui'; // Subfolder in monorepo
+const ROOT_DIRECTORY = null; // Not a monorepo - code is at repo root
 
 const ENVIRONMENTS = {
   staging: {
-    name: 'blink-staging',
+    name: 'blink-platform-staging',
     subdomain: 'staging.blink',
     railwayEnv: 'staging'
   },
   production: {
-    name: 'blink-production',
+    name: 'blink-platform-prod',
     subdomain: 'blink',
     railwayEnv: 'production'
   }

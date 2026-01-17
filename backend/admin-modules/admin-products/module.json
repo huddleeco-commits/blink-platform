@@ -1,0 +1,34 @@
+{
+  "name": "admin-products",
+  "version": "1.0.0",
+  "description": "Product catalog, inventory, and pricing management",
+  "tier": "pro",
+  "category": "commerce",
+  "icon": "Package",
+  "order": 9,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["products", "categories", "inventory"],
+  "features": [
+    "Product listing",
+    "Add/edit products",
+    "Category management",
+    "Pricing and variants",
+    "Inventory tracking",
+    "Stock alerts",
+    "Product images",
+    "Bulk import/export"
+  ],
+  "routes": {
+    "prefix": "/products",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/ProductsPage.jsx",
+    "sidebar": {
+      "id": "products",
+      "label": "Products",
+      "icon": "Package"
+    }
+  },
+  "industries": ["ecommerce", "retail", "restaurant", "food-delivery"]
+}

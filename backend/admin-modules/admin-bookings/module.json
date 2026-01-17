@@ -1,0 +1,34 @@
+{
+  "name": "admin-bookings",
+  "version": "1.0.0",
+  "description": "Appointment and reservation management with calendar view",
+  "tier": "standard",
+  "category": "operations",
+  "icon": "Calendar",
+  "order": 6,
+  "dependencies": ["admin-dashboard", "admin-customers"],
+  "requiredTables": ["bookings", "services"],
+  "features": [
+    "Calendar view of bookings",
+    "Create/edit/cancel bookings",
+    "Service selection",
+    "Customer assignment",
+    "Time slot management",
+    "Booking confirmations",
+    "Reminder notifications",
+    "Booking history"
+  ],
+  "routes": {
+    "prefix": "/bookings",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/BookingsPage.jsx",
+    "sidebar": {
+      "id": "bookings",
+      "label": "Bookings",
+      "icon": "Calendar"
+    }
+  },
+  "industries": ["salon", "spa", "fitness", "healthcare", "restaurant", "professional-services"]
+}

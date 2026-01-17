@@ -1,0 +1,33 @@
+{
+  "name": "admin-errors",
+  "version": "1.0.0",
+  "description": "Error monitoring and debugging (internal platform module)",
+  "tier": "internal",
+  "category": "platform",
+  "icon": "AlertTriangle",
+  "order": 22,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["error_logs"],
+  "features": [
+    "Error count (24 hours)",
+    "Error rate percentage",
+    "Error patterns/types",
+    "Affected users per error",
+    "Recent error logs",
+    "Stack traces",
+    "Error resolution tracking"
+  ],
+  "routes": {
+    "prefix": "/errors",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/ErrorsPage.jsx",
+    "sidebar": {
+      "id": "errors",
+      "label": "Errors",
+      "icon": "AlertTriangle"
+    }
+  },
+  "platformOnly": true
+}

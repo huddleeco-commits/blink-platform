@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recipe Scaler | Artisan Bakery</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+      @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Montserrat:wght@300;400;500;600&display=swap');
+      body {
+        font-family: 'Montserrat', sans-serif;
+        background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+        min-height: 100vh;
+      }
+      .tool-container {
+        background: linear-gradient(145deg, #1f1f1f 0%, #2a2a2a 100%);
+        border: 1px solid #c9a962;
+        border-radius: 8px;
+        padding: 48px;
+        max-width: 480px;
+        margin: 50px auto;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        position: relative;
+      }
+      .tool-container::before {
+        content: '';
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        border: 1px solid rgba(201, 169, 98, 0.2);
+        border-radius: 4px;
+        pointer-events: none;
+      }
+      .tool-header {
+        text-align: center;
+        margin-bottom: 40px;
+      }
+      .tool-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 2rem;
+        font-weight: 600;
+        color: #c9a962;
+        margin: 0 0 12px 0;
+        letter-spacing: 4px;
+        text-transform: uppercase;
+      }
+      .tool-subtitle {
+        color: #888;
+        font-size: 0.85rem;
+        font-weight: 300;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+      }
+      .form-group {
+        margin-bottom: 28px;
+      }
+      .form-label {
+        display: block;
+        font-weight: 500;
+        color: #c9a962;
+        margin-bottom: 12px;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+      .form-input {
+        width: 100%;
+        padding: 16px 20px;
+        border: 1px solid #444;
+        border-radius: 4px;
+        font-size: 1rem;
+        font-family: 'Montserrat', sans-serif;
+        background: #1a1a1a;
+        color: #fff;
+        transition: all 0.25s ease;
+        font-weight: 300;
+      }
+      .form-input:focus {
+        outline: none;
+        border-color: #c9a962;
+        box-shadow: 0 0 20px rgba(201, 169, 98, 0.15);
+      }
+      .form-input::placeholder {
+        color: #666;
+        font-weight: 300;
+      }
+      .btn-primary {
+        width: 100%;
+        padding: 18px 32px;
+        background: linear-gradient(135deg, #c9a962 0%, #d4b978 50%, #c9a962 100%);
+        background-size: 200% auto;
+        color: #1a1a1a;
+        border: none;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-transform: uppercase;
+        letter-spacing: 3px;
+        transition: all 0.25s ease;
+      }
+      .btn-primary:hover {
+        background-position: right center;
+        box-shadow: 0 8px 30px rgba(201, 169, 98, 0.3);
+      }
+      .result-card {
+        margin-top: 36px;
+        padding: 32px;
+        background: rgba(201, 169, 98, 0.05);
+        border: 1px solid rgba(201, 169, 98, 0.3);
+        border-radius: 4px;
+        display: none;
+      }
+      .result-card.visible { display: block; }
+      .result-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-weight: 600;
+        color: #c9a962;
+        margin-bottom: 20px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 3px;
+        border-bottom: 1px solid rgba(201, 169, 98, 0.3);
+        padding-bottom: 12px;
+      }
+      .result-value {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 3rem;
+        font-weight: 700;
+        color: #c9a962;
+        margin-bottom: 16px;
+      }
+      .result-detail {
+        color: #999;
+        font-size: 0.9rem;
+        margin-bottom: 8px;
+        font-weight: 300;
+      }
+      .brand-footer {
+        text-align: center;
+        margin-top: 36px;
+        padding-top: 24px;
+        border-top: 1px solid #333;
+        color: #666;
+        font-size: 0.75rem;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+      }
+    
+
+    .ingredient-list {
+      margin-bottom: 24px;
+    }
+    .ingredient-item {
+      display: grid;
+      grid-template-columns: 80px 80px 1fr 40px;
+      gap: 12px;
+      margin-bottom: 12px;
+      align-items: center;
+    }
+    .ingredient-item .form-input {
+      margin: 0;
+    }
+    .add-ingredient {
+      padding: 10px 16px;
+      background: transparent;
+      border: 1px dashed #c9a96260;
+      color: #c9a962;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+      width: 100%;
+    }
+    .add-ingredient:hover {
+      background: #c9a96210;
+      border-style: solid;
+    }
+    .remove-btn {
+      padding: 8px;
+      background: #fee2e2;
+      color: #dc2626;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    .scale-options {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .scale-btn {
+      padding: 10px 16px;
+      background: #c9a96215;
+      border: 1px solid #c9a96230;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      color: #c9a962;
+      transition: all 0.2s ease;
+    }
+    .scale-btn:hover, .scale-btn.active {
+      background: #c9a962;
+      color: white;
+    }
+    .result-ingredients {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .result-ingredient {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.5);
+      border-radius: 8px;
+    }
+    .result-ingredient .amount {
+      font-weight: 600;
+      color: #c9a962;
+    }
+    .custom-scale {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .custom-scale .form-input {
+      width: 100px;
+    }
+  </style>
+</head>
+<body>
+  <div class="tool-container">
+    <div class="tool-header">
+      
+      <h1 class="tool-title">Recipe Scaler</h1>
+      <p class="tool-subtitle">Scale your recipes to any serving size</p>
+    </div>
+
+    <form id="recipe-form">
+      <div class="form-group">
+        <label class="form-label">Original Servings</label>
+        <input type="number" class="form-input" id="original-servings" value="4" min="1" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Ingredients</label>
+        <div class="ingredient-list" id="ingredient-list">
+          <div class="ingredient-item">
+            <input type="number" class="form-input" placeholder="Amount" step="0.25" value="2">
+            <select class="form-input" style="padding: 12px 8px;">
+              <option value="cups">cups</option>
+              <option value="tbsp">tbsp</option>
+              <option value="tsp">tsp</option>
+              <option value="oz">oz</option>
+              <option value="lbs">lbs</option>
+              <option value="g">g</option>
+              <option value="ml">ml</option>
+              <option value="whole">whole</option>
+            </select>
+            <input type="text" class="form-input" placeholder="Ingredient name" value="flour">
+            <button type="button" class="remove-btn" onclick="removeIngredient(this)">×</button>
+          </div>
+          <div class="ingredient-item">
+            <input type="number" class="form-input" placeholder="Amount" step="0.25" value="1">
+            <select class="form-input" style="padding: 12px 8px;">
+              <option value="cups">cups</option>
+              <option value="tbsp">tbsp</option>
+              <option value="tsp">tsp</option>
+              <option value="oz">oz</option>
+              <option value="lbs">lbs</option>
+              <option value="g">g</option>
+              <option value="ml">ml</option>
+              <option value="whole">whole</option>
+            </select>
+            <input type="text" class="form-input" placeholder="Ingredient name" value="sugar">
+            <button type="button" class="remove-btn" onclick="removeIngredient(this)">×</button>
+          </div>
+        </div>
+        <button type="button" class="add-ingredient" onclick="addIngredient()">+ Add Ingredient</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Scale To</label>
+        <div class="scale-options">
+          <button type="button" class="scale-btn" onclick="setScale(0.5)">½×</button>
+          <button type="button" class="scale-btn active" onclick="setScale(1)">1×</button>
+          <button type="button" class="scale-btn" onclick="setScale(1.5)">1.5×</button>
+          <button type="button" class="scale-btn" onclick="setScale(2)">2×</button>
+          <button type="button" class="scale-btn" onclick="setScale(3)">3×</button>
+        </div>
+        <div class="custom-scale">
+          <span>Or scale to:</span>
+          <input type="number" class="form-input" id="target-servings" placeholder="Servings" min="1">
+          <span>servings</span>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary">Scale Recipe</button>
+    </form>
+
+    <div class="result-card" id="result">
+      <div class="result-title">Scaled Ingredients</div>
+      <div class="result-value" id="result-servings">8 Servings</div>
+      <div class="result-ingredients" id="result-ingredients"></div>
+    </div>
+
+    <footer class="brand-footer">
+      Artisan Bakery • Powered by Blink
+    </footer>
+  </div>
+
+  <script>
+    let currentScale = 1;
+
+    function addIngredient() {
+      const list = document.getElementById('ingredient-list');
+      const item = document.createElement('div');
+      item.className = 'ingredient-item';
+      item.innerHTML = `
+        <input type="number" class="form-input" placeholder="Amount" step="0.25">
+        <select class="form-input" style="padding: 12px 8px;">
+          <option value="cups">cups</option>
+          <option value="tbsp">tbsp</option>
+          <option value="tsp">tsp</option>
+          <option value="oz">oz</option>
+          <option value="lbs">lbs</option>
+          <option value="g">g</option>
+          <option value="ml">ml</option>
+          <option value="whole">whole</option>
+        </select>
+        <input type="text" class="form-input" placeholder="Ingredient name">
+        <button type="button" class="remove-btn" onclick="removeIngredient(this)">×</button>
+      `;
+      list.appendChild(item);
+    }
+
+    function removeIngredient(btn) {
+      const list = document.getElementById('ingredient-list');
+      if (list.children.length > 1) {
+        btn.closest('.ingredient-item').remove();
+      }
+    }
+
+    function setScale(scale) {
+      currentScale = scale;
+      document.querySelectorAll('.scale-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('target-servings').value = '';
+    }
+
+    function formatAmount(amount) {
+      const fractions = {
+        0.25: '¼', 0.33: '⅓', 0.5: '½', 0.67: '⅔', 0.75: '¾',
+        0.125: '⅛', 0.375: '⅜', 0.625: '⅝', 0.875: '⅞'
+      };
+
+      const whole = Math.floor(amount);
+      const decimal = amount - whole;
+
+      if (decimal === 0) return whole.toString();
+
+      const closestFraction = Object.entries(fractions).reduce((closest, [key, val]) => {
+        return Math.abs(parseFloat(key) - decimal) < Math.abs(parseFloat(closest[0]) - decimal) ? [key, val] : closest;
+      }, ['0', '']);
+
+      if (Math.abs(parseFloat(closestFraction[0]) - decimal) < 0.1) {
+        return whole > 0 ? whole + ' ' + closestFraction[1] : closestFraction[1];
+      }
+
+      return amount.toFixed(2).replace(/\.?0+$/, '');
+    }
+
+    document.getElementById('recipe-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      const originalServings = parseFloat(document.getElementById('original-servings').value) || 4;
+      const targetServings = document.getElementById('target-servings').value;
+
+      let scale = currentScale;
+      if (targetServings) {
+        scale = parseFloat(targetServings) / originalServings;
+      }
+
+      const ingredients = [];
+      document.querySelectorAll('.ingredient-item').forEach(item => {
+        const amount = parseFloat(item.querySelector('input[type="number"]').value) || 0;
+        const unit = item.querySelector('select').value;
+        const name = item.querySelector('input[type="text"]').value;
+
+        if (name) {
+          ingredients.push({
+            amount: amount * scale,
+            unit,
+            name
+          });
+        }
+      });
+
+      const newServings = targetServings ? parseFloat(targetServings) : Math.round(originalServings * scale);
+
+      document.getElementById('result-servings').textContent = newServings + ' Servings';
+
+      const resultsContainer = document.getElementById('result-ingredients');
+      resultsContainer.innerHTML = ingredients.map(ing => `
+        <div class="result-ingredient">
+          <span>${ing.name}</span>
+          <span class="amount">${formatAmount(ing.amount)} ${ing.unit}</span>
+        </div>
+      `).join('');
+
+      document.getElementById('result').classList.add('visible');
+    });
+  </script>
+</body>
+</html>

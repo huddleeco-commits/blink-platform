@@ -1,0 +1,33 @@
+{
+  "name": "admin-dashboard",
+  "version": "1.0.0",
+  "description": "Core admin dashboard with overview statistics, quick actions, and key metrics",
+  "tier": "lite",
+  "category": "core",
+  "icon": "LayoutDashboard",
+  "order": 1,
+  "dependencies": [],
+  "requiredTables": ["users", "generations", "api_usage"],
+  "features": [
+    "Overview statistics dashboard",
+    "User count and tier distribution",
+    "Generation metrics and success rates",
+    "API cost summary",
+    "Revenue overview (MRR/ARR)",
+    "Recent activity feed",
+    "Quick action buttons",
+    "7-day trend charts"
+  ],
+  "routes": {
+    "prefix": "/overview",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/DashboardPage.jsx",
+    "sidebar": {
+      "id": "overview",
+      "label": "Overview",
+      "icon": "LayoutDashboard"
+    }
+  }
+}

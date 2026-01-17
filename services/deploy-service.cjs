@@ -103,191 +103,6 @@ function regeneratePackageLock(folderPath, folderName) {
   }
 }
 
-/**
- * Validate JSX/JS files for syntax errors before deployment
- * Uses esbuild to parse files - catches unterminated strings, missing brackets, etc.
- * Returns { valid: boolean, errors: string[] }
- */
-function validateSyntax(projectPath) {
-  console.log(`\n🔍 Validating code syntax...`);
-  const errors = [];
-
-  // Find all .jsx and .js files in frontend/src
-  const frontendSrc = path.join(projectPath, 'frontend', 'src');
-  if (!fs.existsSync(frontendSrc)) {
-    console.log(`   ⚠️ No frontend/src directory found, skipping validation`);
-    return { valid: true, errors: [] };
-  }
-
-  function findJsxFiles(dir, files = []) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory() && entry.name !== 'node_modules') {
-        findJsxFiles(fullPath, files);
-      } else if (entry.isFile() && /\.(jsx?|tsx?)$/.test(entry.name)) {
-        files.push(fullPath);
-      }
-    }
-    return files;
-  }
-
-  const files = findJsxFiles(frontendSrc);
-  console.log(`   📄 Found ${files.length} JS/JSX files to validate`);
-
-  for (const file of files) {
-    try {
-      const content = fs.readFileSync(file, 'utf8');
-      const relativePath = path.relative(projectPath, file);
-
-      // Quick regex checks for common AI-generated bugs
-      const lines = content.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const lineNum = i + 1;
-
-        // Check for unterminated string in style object (missing opening quote)
-        // Pattern: propertyName: value' (ends with quote but no opening quote for strings)
-        const unterminatedMatch = line.match(/:\s*([0-9.]+)'(?!\s*[,}])/);
-        if (unterminatedMatch) {
-          errors.push(`${relativePath}:${lineNum}: Possible unterminated string: "${line.trim()}"`);
-        }
-
-        // Check for missing comma between style properties
-        // Pattern: } property: (closing brace followed by property without comma)
-        if (line.match(/}\s+[a-zA-Z]+:/)) {
-          errors.push(`${relativePath}:${lineNum}: Possible missing comma: "${line.trim()}"`);
-        }
-
-        // Check for style value with only closing quote
-        // Pattern: : 0.7' or : 16' (number followed by single quote)
-        const badQuoteMatch = line.match(/:\s*\d+(\.\d+)?'/);
-        if (badQuoteMatch && !line.match(/:\s*['"].*['"]/) && !line.match(/:\s*`.*`/)) {
-          errors.push(`${relativePath}:${lineNum}: Invalid style value (trailing quote without opening): "${line.trim()}"`);
-        }
-
-        // Check for CSS values without quotes that need them
-        // Pattern: padding: 20px (should be padding: '20px')
-        const cssValueNoQuotes = line.match(/:\s*\d+px(?!\s*['"`])/);
-        if (cssValueNoQuotes && line.includes('style') && !line.match(/:\s*['"`]\d+px/)) {
-          // Only flag if it looks like JSX inline style
-          if (line.includes('{{') || line.includes('style=') || line.match(/[a-zA-Z]+:\s*\d+px/)) {
-            errors.push(`${relativePath}:${lineNum}: CSS value might need quotes: "${line.trim()}"`);
-          }
-        }
-
-        // Check for hex colors without quotes
-        // Pattern: color: #ffffff (should be color: '#ffffff')
-        const hexNoQuotes = line.match(/:\s*#[0-9a-fA-F]{3,8}(?!\s*['"`])/);
-        if (hexNoQuotes && !line.match(/:\s*['"`]#/)) {
-          errors.push(`${relativePath}:${lineNum}: Hex color needs quotes: "${line.trim()}"`);
-        }
-      }
-
-      // Try to parse with a simple check - look for unbalanced braces/brackets
-      let braceCount = 0, bracketCount = 0, parenCount = 0;
-      let inString = false, stringChar = '';
-
-      for (let i = 0; i < content.length; i++) {
-        const char = content[i];
-        const prevChar = i > 0 ? content[i-1] : '';
-
-        // Track string state
-        if ((char === '"' || char === "'" || char === '`') && prevChar !== '\\') {
-          if (!inString) {
-            inString = true;
-            stringChar = char;
-          } else if (char === stringChar) {
-            inString = false;
-            stringChar = '';
-          }
-        }
-
-        if (!inString) {
-          if (char === '{') braceCount++;
-          else if (char === '}') braceCount--;
-          else if (char === '[') bracketCount++;
-          else if (char === ']') bracketCount--;
-          else if (char === '(') parenCount++;
-          else if (char === ')') parenCount--;
-        }
-      }
-
-      if (braceCount !== 0) {
-        errors.push(`${relativePath}: Unbalanced braces (${braceCount > 0 ? 'missing' : 'extra'} ${Math.abs(braceCount)} closing brace${Math.abs(braceCount) > 1 ? 's' : ''})`);
-      }
-      if (bracketCount !== 0) {
-        errors.push(`${relativePath}: Unbalanced brackets (${bracketCount > 0 ? 'missing' : 'extra'} ${Math.abs(bracketCount)} closing bracket${Math.abs(bracketCount) > 1 ? 's' : ''})`);
-      }
-      if (parenCount !== 0) {
-        errors.push(`${relativePath}: Unbalanced parentheses (${parenCount > 0 ? 'missing' : 'extra'} ${Math.abs(parenCount)} closing paren${Math.abs(parenCount) > 1 ? 's' : ''})`);
-      }
-
-    } catch (err) {
-      errors.push(`${file}: Failed to read file: ${err.message}`);
-    }
-  }
-
-  if (errors.length > 0) {
-    console.log(`   ❌ Found ${errors.length} syntax issue(s):`);
-    errors.forEach(err => console.log(`      • ${err}`));
-    return { valid: false, errors };
-  }
-
-  console.log(`   ✅ All files passed syntax validation`);
-  return { valid: true, errors: [] };
-}
-
-/**
- * Run Vite build to validate code compiles
- * This catches all syntax errors that the regex checks might miss
- * Returns { valid: boolean, error: string | null }
- */
-function runBuildValidation(projectPath) {
-  const frontendPath = path.join(projectPath, 'frontend');
-  if (!fs.existsSync(frontendPath)) {
-    return { valid: true, error: null };
-  }
-
-  console.log(`\n🔨 Running build validation...`);
-
-  try {
-    // Install dependencies first (needed for build)
-    console.log(`   📦 Installing dependencies...`);
-    execSync('npm install --legacy-peer-deps', {
-      cwd: frontendPath,
-      stdio: 'pipe',
-      timeout: 180000,
-      windowsHide: true
-    });
-
-    // Run build
-    console.log(`   🏗️ Building project...`);
-    execSync('npm run build', {
-      cwd: frontendPath,
-      stdio: 'pipe',
-      timeout: 300000, // 5 minute timeout for build
-      windowsHide: true
-    });
-
-    console.log(`   ✅ Build succeeded`);
-    return { valid: true, error: null };
-  } catch (err) {
-    // Extract the useful error message
-    const stderr = err.stderr?.toString() || err.message;
-
-    // Look for specific error patterns
-    const errorMatch = stderr.match(/error[:\s]+(.+?)(?:\n|$)/i) ||
-                       stderr.match(/ERROR[:\s]+(.+?)(?:\n|$)/) ||
-                       stderr.match(/([A-Za-z]+\.jsx?:\d+:\d+:.+?)(?:\n|$)/);
-
-    const errorMessage = errorMatch ? errorMatch[1].trim() : stderr.substring(0, 500);
-
-    console.log(`   ❌ Build failed: ${errorMessage}`);
-    return { valid: false, error: errorMessage };
-  }
-}
-
 function prepareProjectForDeployment(projectPath, subdomain) {
   console.log(`📋 Preparing project for deployment...`);
 
@@ -986,11 +801,16 @@ async function addCloudflareDNS(subdomain, target, type = 'CNAME', proxied = tru
 // ============================================
 
 async function deployProject(projectPath, projectName, options = {}) {
+  // Progress callback for real-time updates
+  const onProgress = options.onProgress || (() => {});
+
   console.log('');
   console.log('═══════════════════════════════════════════════════════════════');
   console.log(`🚀 DEPLOYING: ${projectName}`);
   console.log('═══════════════════════════════════════════════════════════════');
   console.log('');
+
+  onProgress({ step: 'starting', status: 'Starting deployment...', icon: '🚀', progress: 0 });
 
   const subdomain = projectName
   .toLowerCase()
@@ -1006,54 +826,50 @@ async function deployProject(projectPath, projectName, options = {}) {
   };
 
   try {
+    onProgress({ step: 'github-auth', status: 'Authenticating with GitHub...', icon: '🔑', progress: 5 });
     const githubUsername = await getGitHubUsername();
     console.log(`👤 GitHub user: ${githubUsername}`);
 
+    onProgress({ step: 'prepare', status: 'Preparing project files...', icon: '📋', progress: 8 });
     prepareProjectForDeployment(projectPath, subdomain);
-
-    // PRE-DEPLOY VALIDATION: Check for syntax errors before pushing
-    // Step 1: Quick regex-based syntax check
-    const syntaxResult = validateSyntax(projectPath);
-    if (!syntaxResult.valid) {
-      throw new Error(`Code validation failed:\n${syntaxResult.errors.join('\n')}`);
-    }
-
-    // Step 2: Full build validation (catches errors regex might miss)
-    const buildResult = runBuildValidation(projectPath);
-    if (!buildResult.valid) {
-      throw new Error(`Build validation failed: ${buildResult.error}`);
-    }
-
-    console.log(`\n✅ All validations passed, proceeding with deployment...\n`);
 
     const backendRepoName = `${subdomain}-backend`;
     const frontendRepoName = `${subdomain}-frontend`;
     const adminRepoName = `${subdomain}-admin`;
 
+    onProgress({ step: 'github-cleanup', status: 'Cleaning up old repositories...', icon: '🧹', progress: 10 });
     await deleteGitHubRepo(githubUsername, backendRepoName);
     await deleteGitHubRepo(githubUsername, frontendRepoName);
     await deleteGitHubRepo(githubUsername, adminRepoName);
 
     await sleep(1000);
 
+    onProgress({ step: 'github-create', status: 'Creating GitHub repositories...', icon: '📦', progress: 15 });
     await createGitHubRepo(backendRepoName);
     await createGitHubRepo(frontendRepoName);
     await createGitHubRepo(adminRepoName);
 
+    onProgress({ step: 'github-push-backend', status: 'Pushing backend code to GitHub...', icon: '📤', progress: 20 });
     await pushFolderToGitHub(projectPath, 'backend', backendRepoName, githubUsername);
+
+    onProgress({ step: 'github-push-frontend', status: 'Pushing frontend code to GitHub...', icon: '📤', progress: 28 });
     await pushFolderToGitHub(projectPath, 'frontend', frontendRepoName, githubUsername);
-    
+
     // Only push admin if it exists
     const adminPath = path.join(projectPath, 'admin');
     if (fs.existsSync(adminPath)) {
+      onProgress({ step: 'github-push-admin', status: 'Pushing admin code to GitHub...', icon: '📤', progress: 35 });
       await pushFolderToGitHub(projectPath, 'admin', adminRepoName, githubUsername);
     }
 
+    onProgress({ step: 'railway-project', status: 'Creating Railway project...', icon: '🚂', progress: 40 });
     const railwayProject = await createRailwayProject(subdomain);
     const environmentId = railwayProject.environmentId;
 
+    onProgress({ step: 'railway-database', status: 'Provisioning PostgreSQL database...', icon: '🗄️', progress: 45 });
     const postgresInfo = await createRailwayPostgres(railwayProject.id, environmentId);
 
+    onProgress({ step: 'railway-backend', status: 'Creating backend service...', icon: '⚙️', progress: 50 });
     const backendService = await createRailwayService(
       railwayProject.id,
       environmentId,
@@ -1061,6 +877,7 @@ async function deployProject(projectPath, projectName, options = {}) {
       `${githubUsername}/${backendRepoName}`
     );
 
+    onProgress({ step: 'railway-frontend', status: 'Creating frontend service...', icon: '🌐', progress: 55 });
     const frontendService = await createRailwayService(
       railwayProject.id,
       environmentId,
@@ -1071,6 +888,7 @@ async function deployProject(projectPath, projectName, options = {}) {
     // Create admin service if admin folder exists
     let adminService = null;
     if (fs.existsSync(path.join(projectPath, 'admin'))) {
+      onProgress({ step: 'railway-admin', status: 'Creating admin service...', icon: '🔧', progress: 58 });
       adminService = await createRailwayService(
         railwayProject.id,
         environmentId,
@@ -1079,9 +897,10 @@ async function deployProject(projectPath, projectName, options = {}) {
       );
     }
 
+    onProgress({ step: 'railway-env', status: 'Configuring environment variables...', icon: '🔐', progress: 62 });
     const jwtSecret = require('crypto').randomBytes(32).toString('hex');
     const adminPassword = require('crypto').randomBytes(8).toString('hex');
-    
+
     await setRailwayVariables(railwayProject.id, environmentId, backendService.id, {
       NODE_ENV: 'production',
       JWT_SECRET: jwtSecret,
@@ -1106,10 +925,12 @@ async function deployProject(projectPath, projectName, options = {}) {
     }
 
     // Wait for Railway to fully establish GitHub webhook connection
+    onProgress({ step: 'railway-wait', status: 'Waiting for Railway webhooks...', icon: '⏳', progress: 65 });
     console.log('   ⏳ Waiting 20s for Railway to establish GitHub webhooks...');
     await sleep(20000);
 
     // Trigger initial deployments with longer delays
+    onProgress({ step: 'deploy-backend', status: 'Deploying backend service...', icon: '🚀', progress: 70 });
     console.log('   🚀 Triggering backend deployment...');
     try {
       await deployRailwayService(environmentId, backendService.id);
@@ -1117,7 +938,8 @@ async function deployProject(projectPath, projectName, options = {}) {
       console.log('   ⚠️ Backend deploy trigger failed, Railway will auto-deploy from GitHub');
     }
     await sleep(3000);
-    
+
+    onProgress({ step: 'deploy-frontend', status: 'Deploying frontend service...', icon: '🚀', progress: 75 });
     console.log('   🚀 Triggering frontend deployment...');
     try {
       await deployRailwayService(environmentId, frontendService.id);
@@ -1128,6 +950,7 @@ async function deployProject(projectPath, projectName, options = {}) {
     // Trigger admin deployment if service exists
     if (adminService) {
       await sleep(3000);
+      onProgress({ step: 'deploy-admin', status: 'Deploying admin dashboard...', icon: '🚀', progress: 78 });
       console.log('   🚀 Triggering admin deployment...');
       try {
         await deployRailwayService(environmentId, adminService.id);
@@ -1136,10 +959,12 @@ async function deployProject(projectPath, projectName, options = {}) {
       }
     }
 
+    onProgress({ step: 'domains', status: 'Generating service domains...', icon: '🔗', progress: 82 });
     const backendRailwayDomain = await generateRailwayServiceDomain(railwayProject.id, environmentId, backendService.id);
     const frontendRailwayDomain = await generateRailwayServiceDomain(railwayProject.id, environmentId, frontendService.id);
     const adminRailwayDomain = adminService ? await generateRailwayServiceDomain(railwayProject.id, environmentId, adminService.id) : null;
 
+    onProgress({ step: 'custom-domains', status: 'Configuring custom domains...', icon: '🌍', progress: 86 });
     console.log(`\n📌 Configuring custom domains...`);
     
     // Add custom domains to Railway and get the target domains
@@ -1147,26 +972,31 @@ async function deployProject(projectPath, projectName, options = {}) {
     const backendCustom = await addRailwayCustomDomain(railwayProject.id, environmentId, backendService.id, `api.${subdomain}.be1st.io`);
     const adminCustom = adminService ? await addRailwayCustomDomain(railwayProject.id, environmentId, adminService.id, `admin.${subdomain}.be1st.io`) : null;
     
+    onProgress({ step: 'dns', status: 'Setting up DNS records...', icon: '📡', progress: 90 });
     console.log(`\n📌 Configuring DNS (Cloudflare → Railway)...`);
-    
+
     // Use Railway's custom domain target if available, otherwise fall back to service domain
     const frontendTarget = frontendCustom.target || frontendRailwayDomain;
     const backendTarget = backendCustom.target || backendRailwayDomain;
     const adminTarget = adminCustom?.target || adminRailwayDomain;
-    
+
     if (frontendTarget) {
       await addCloudflareDNS(subdomain, frontendTarget, 'CNAME', true);
     }
-    
+
     if (backendTarget) {
       await addCloudflareDNS(`api.${subdomain}`, backendTarget, 'CNAME', false);
     }
 
     if (adminTarget) {
-  await addCloudflareDNS(`admin.${subdomain}`, adminTarget, 'CNAME', false);  // DNS only, no proxy
-}
+      await addCloudflareDNS(`admin.${subdomain}`, adminTarget, 'CNAME', false);  // DNS only, no proxy
+    }
+
+    onProgress({ step: 'finalizing', status: 'Finalizing deployment...', icon: '✨', progress: 95 });
 
     results.success = true;
+    results.railwayProjectId = railwayProject.id;
+    results.railwayEnvironmentId = environmentId;
     results.urls = {
       frontend: `https://${subdomain}.be1st.io`,
       backend: `https://api.${subdomain}.be1st.io`,
@@ -1183,6 +1013,8 @@ async function deployProject(projectPath, projectName, options = {}) {
       adminEmail: options.adminEmail || 'admin@be1st.io',
       adminPassword: adminPassword
     };
+
+    onProgress({ step: 'complete', status: 'Deployment complete!', icon: '✅', progress: 100, urls: results.urls });
 
     console.log('');
     console.log('═══════════════════════════════════════════════════════════════');
@@ -1256,8 +1088,5 @@ module.exports = {
   addCloudflareDNS,
   prepareProjectForDeployment,
   getGitHubUsername,
-  deleteGitHubRepo,
-  // Pre-deploy validation
-  validateSyntax,
-  runBuildValidation
+  deleteGitHubRepo
 };

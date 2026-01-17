@@ -1,0 +1,31 @@
+{
+  "name": "admin-whitelabel",
+  "version": "1.0.0",
+  "description": "White-label branding and customization for agencies/resellers",
+  "tier": "enterprise",
+  "category": "branding",
+  "icon": "Palette",
+  "order": 16,
+  "dependencies": ["admin-dashboard", "admin-settings"],
+  "requiredTables": ["whitelabel_settings"],
+  "features": [
+    "Custom domain mapping",
+    "Custom branding",
+    "Remove platform branding",
+    "Custom email domain",
+    "Client-facing customization",
+    "Reseller pricing"
+  ],
+  "routes": {
+    "prefix": "/whitelabel",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/WhitelabelPage.jsx",
+    "sidebar": {
+      "id": "whitelabel",
+      "label": "White Label",
+      "icon": "Palette"
+    }
+  }
+}

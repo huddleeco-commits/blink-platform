@@ -1,0 +1,32 @@
+{
+  "name": "admin-team",
+  "version": "1.0.0",
+  "description": "Team/staff management with roles and permissions",
+  "tier": "pro",
+  "category": "core",
+  "icon": "UserCog",
+  "order": 13,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["team_members", "roles", "permissions"],
+  "features": [
+    "Team member list",
+    "Add/remove team members",
+    "Role assignment",
+    "Permission management",
+    "Activity tracking",
+    "Access control",
+    "Invite team members"
+  ],
+  "routes": {
+    "prefix": "/team",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/TeamPage.jsx",
+    "sidebar": {
+      "id": "team",
+      "label": "Team",
+      "icon": "UserCog"
+    }
+  }
+}

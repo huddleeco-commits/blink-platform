@@ -1,0 +1,32 @@
+{
+  "name": "admin-api",
+  "version": "1.0.0",
+  "description": "API key management, webhooks, and integrations",
+  "tier": "enterprise",
+  "category": "developer",
+  "icon": "Key",
+  "order": 15,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["api_keys", "webhooks"],
+  "features": [
+    "API key generation",
+    "Key rotation",
+    "Usage limits",
+    "Webhook configuration",
+    "Integration settings",
+    "API documentation",
+    "Request logging"
+  ],
+  "routes": {
+    "prefix": "/api-settings",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/ApiPage.jsx",
+    "sidebar": {
+      "id": "api",
+      "label": "API & Webhooks",
+      "icon": "Key"
+    }
+  }
+}

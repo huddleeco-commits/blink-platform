@@ -1,0 +1,33 @@
+{
+  "name": "admin-customers",
+  "version": "1.0.0",
+  "description": "Customer/user management with search, tier changes, bans, and activity tracking",
+  "tier": "standard",
+  "category": "core",
+  "icon": "Users",
+  "order": 2,
+  "dependencies": ["admin-dashboard"],
+  "requiredTables": ["users"],
+  "features": [
+    "User search and filtering",
+    "Pagination and sorting",
+    "Tier management (free/power/dealer/admin)",
+    "Ban/unban functionality",
+    "User deletion (soft/hard)",
+    "User activity history",
+    "Export users to CSV",
+    "Individual user details"
+  ],
+  "routes": {
+    "prefix": "/users",
+    "file": "routes/index.js"
+  },
+  "components": {
+    "main": "components/CustomersPage.jsx",
+    "sidebar": {
+      "id": "users",
+      "label": "Customers",
+      "icon": "Users"
+    }
+  }
+}

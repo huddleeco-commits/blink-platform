@@ -22,7 +22,8 @@ export const STYLE_OPTIONS = [
 ];
 
 export const ADMIN_LEVELS = [
-  { key: 'lite', label: 'Lite', description: '3 modules - Basic content management' },
-  { key: 'standard', label: 'Standard', description: '7 modules - Full admin features', recommended: true },
-  { key: 'pro', label: 'Pro', description: '12+ modules - Advanced analytics & tools' }
+  { key: 'lite', label: 'Lite', description: '3 modules - Basic content management', moduleCount: 3 },
+  { key: 'standard', label: 'Standard', description: '7 modules - Full admin features', recommended: true, moduleCount: 7 },
+  { key: 'pro', label: 'Pro', description: '13 modules - E-commerce & marketing tools', moduleCount: 13 },
+  { key: 'enterprise', label: 'Enterprise', description: '16 modules - Multi-location & API access', moduleCount: 16 }
 ];
